@@ -1,0 +1,5 @@
+{
+	"namespace": "Skill_Boosts",
+	"setup": "main.mjs",
+	"load": ["style.css", "src/Settings.mjs", "src/Patching.mjs"]
+}

@@ -1,0 +1,74 @@
+<template id="SkillBoosts-Menu-Template">
+	<div id="SB-Menu-Container">
+		<div id="SB-Btns" class="d-flex justify-content-center pb-2 pt-2">
+			<button id="SB-Skill-Dropdown" class="btn btn-secondary font-size-sm dropdown-toggle min-4-icons no-padding" type="button" data-toggle="dropdown", aria-haspopup="true" aria-expanded="false"></button>
+			<div id="SB-Dropdown-Items" class="dropdown-menu font-size-sm max-vh-60 overflow-y-auto"></div>
+			<div class="btn-group ml-2">
+				<button id="SB-Filter-Btn" class="btn btn-sm btn-warning font-size-xs">
+					<sb-lang sb-lang-id="FILTER"></sb-lang>
+				</button>
+				<button id="SB-Boosts-Btn" class="btn btn-sm btn-success font-size-xs">
+					<sb-lang sb-lang-id="BOOSTS"></sb-lang>
+				</button>
+			</div>
+		</div>
+		<div id="SB-Alert" class="alert-secondary text-center d-none" role="alert">
+			<div class="custom-control custom-switch">
+				<div id="SB-Info" class="fa fa-info-circle"></div>
+				<sb-lang class="font-w600" sb-lang-id="FILTER_MODE"></sb-lang>
+				<input id="SB-Mass-Filtering" class="custom-control-input" type="checkbox"></input>
+				<sb-lang class="ml-3 font-w600" sb-lang-id="MASS_FILTER"></sb-lang>
+				<label for="SB-Mass-Filtering" class="custom-control-label"></label>
+			</div>
+		</div>
+		<div id="SB-Icon-Menu" class="row justify-content-around no-gutters plr-1rem-sb">
+			<span id="SB-Global-Container">
+				<div id="SB-Info" class="fa fa-info-circle"></div>
+				<sb-lang sb-lang-id="GLOBAL"></sb-lang>
+				<div id="SB-Global-Icons" class="row no-gutters justify-content-center"></div>
+			</span>
+			<span id="SB-Equipment-Container">
+				<div id="SB-Info" class="fa fa-info-circle"></div>
+				<span id="SB-Current-Skill"></span>
+				<div id="SB-Equipment-Icons" class="row no-gutters justify-content-center"></div>
+			</span>
+			<span id="SB-Positive-Container">
+				<div id="SB-Info" class="fa fa-info-circle"></div>
+				<sb-lang class="text-success" sb-lang-id="POSITIVE"></sb-lang>
+				<div id="SB-Positive-Icons" class="row no-gutters justify-content-center"></div>
+			</span>
+			<span id="SB-Negative-Container">
+				<div id="SB-Info" class="fa fa-info-circle"></div>
+				<sb-lang class="text-danger" sb-lang-id="NEGATIVE"></sb-lang>
+				<div id="SB-Negative-Icons" class="row no-gutters justify-content-center"></div>
+			</span>
+			<span id="SB-Other-Container">
+				<div id="SB-Info" class="fa fa-info-circle"></div>
+				<sb-lang sb-lang-id="OTHERS"></sb-lang>
+				<div id="SB-Other-Icons" class="row no-gutters justify-content-center"></div>
+			</span>
+		</div>
+	</div>
+</template>
+
+
+<template id="SkillBoosts-Agility-Selection">
+	<div class="block block-rounded no-margin">
+		<div class="row no-gutters">
+			<div class="col-12 justify-content-center">
+				<h5 id="SB-Built-Name" class="p-1 rounded font-size-sm font-w700 mb-1 bg-agility"></h5>
+				<h5 id="SB-Built-Cost" class="font-sm-sb font-w600 mb-1"></h5>
+				<h5 id="SB-Built-Requirements" class="font-sm-sb font-w600 mb-1 border-top border-dark border-2x"></h5>
+				<h5 id="SB-Built-Passives" class="col-12 justify-vertical-center font-size-sm font-w600 mb-1 border-top border-dark border-2x"></h5>
+			</div>
+		</div>
+		<div id="SB-Destroy-Container" class="row no-gutters d-none">
+			<div class="col-12 justify-content-center">
+				<h5 id="SB-Destroy-Name" class="p-1 rounded font-size-sm font-w700 mb-1 bg-danger"></h5>
+				<h5 id="SB-Destroy-Cost" class="font-sm-sb font-w600 mb-1"></h5>
+				<h5 id="SB-Destroy-Passives" class="col-12 justify-vertical-center font-size-sm font-w600 mb-1 border-top border-dark border-2x"></h5>
+			</div>
+		</div>
+		<div id="SB-Agi-Boosts" class="row no-gutters justify-content-center border-top border-dark border-4x"></div>
+	</div>
+</template>
