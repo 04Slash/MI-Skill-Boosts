@@ -30,7 +30,9 @@
 		</div>
 		<div id="SB-Alert" class="alert-secondary text-center d-none" role="alert">
 			<div class="custom-control custom-switch mb-1">
-				<div id="SB-Info" class="fa fa-sm fa-info-circle"></div>
+				<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+					<div data-sbTooltipContent></div>
+				</div>
 				<sb-lang class="font-w600" sb-lang-id="FILTER_MODE"></sb-lang>
 				<input id="SB-Mass-Filtering" class="custom-control-input" type="checkbox"></input>
 				<sb-lang class="ml-3 font-w600" sb-lang-id="MASS_FILTER"></sb-lang>
@@ -41,21 +43,27 @@
 			<div id="SB-Icon-Menu" class="row justify-content-around no-gutters px-3-sb">
 				<span id="SB-Equipment-Parent" class="sb-left">
 					<div>
-						<div id="SB-Info" class="fa fa-sm fa-info-circle"></div>
+						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+							<div data-sbTooltipContent></div>
+						</div>
 						<lang-string lang-id="COMBAT_MISC_18"></lang-string>
 					</div>
 					<div id="SB-Equipment-Icons"></div>
 				</span>
 				<span id="SB-Consumable-Parent">
 					<div>
-						<div id="SB-Info" class="fa fa-sm fa-info-circle"></div>
+						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+							<div data-sbTooltipContent></div>
+						</div>
 						<lang-string lang-id="EQUIP_SLOT_Consumable"></lang-string>
 					</div>
 					<div id="SB-Consumable-Icons"></div>
 				</span>
 				<span id="SB-Positive-Parent">
 					<div>
-						<div id="SB-Info" class="fa fa-sm fa-info-circle"></div>
+						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+							<div data-sbTooltipContent></div>
+						</div>
 						<sb-lang class="text-success" sb-lang-id="POSITIVE"></sb-lang>
 					</div>
 					<div id="SB-Positive-Icons"></div>
@@ -68,7 +76,9 @@
 				</span>
 				<span id="SB-Other-Parent" class="sb-other">
 					<div>
-						<div id="SB-Info" class="fa fa-sm fa-info-circle"></div>
+						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+							<div data-sbTooltipContent></div>
+						</div>
 						<sb-lang sb-lang-id="OTHERS"></sb-lang>
 					</div>
 					<div id="SB-Other-Icons"></div>
@@ -77,7 +87,6 @@
 		</div>
 	</div>
 </template>
-
 
 <template id="SkillBoosts-Agility-Selection">
 	<div class="block block-rounded m-0">
@@ -96,6 +105,14 @@
 				<h5 id="SB-Destroy-Passives" class="col-12 justify-vertical-center font-size-sm font-w600 mb-1 border-top border-dark border-2x"></h5>
 			</div>
 		</div>
+		<div id="SB-Agi-Tiers" class="row no-gutters justify-content-center border-top border-dark border-4x"></div>
 		<div id="SB-Agi-Boosts" class="row no-gutters justify-content-center border-top border-dark border-4x"></div>
+	</div>
+</template>
+
+<template id="SkillBoosts-Tooltip">
+	<div id="sb-tooltip" class="sb-tooltip" role="tooltip">
+		<div id="sb-tooltip-content" class="sb-tooltip-content"></div>
+		<div id="sb-tooltip-arrow" class="sb-tooltip-arrow"></div>
 	</div>
 </template>

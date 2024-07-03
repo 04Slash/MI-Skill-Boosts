@@ -7,6 +7,38 @@
 #cartography-container .sb-menu {
 	margin: 0!important;
 }
+sb-tooltip .sb-tooltip {
+	display: none;
+	width: max-content;
+	max-width: 350px;
+	position: absolute;
+	top: 0;
+	left: 0;
+	background: #222;
+	color: #fff;
+	border-radius: 4px
+}
+sb-tooltip .sb-main-tooltip {
+	z-index: 1000011
+}
+sb-tooltip .sb-alt-tooltip {
+	z-index: 10010
+}
+sb-tooltip .sb-tooltip .sb-tooltip-content {
+	max-height: min(40vh,400px);
+	overflow: auto;
+	padding: 5px 10px
+}
+sb-tooltip .sb-tooltip-arrow {
+	position: absolute;
+	background: #222;
+	width: 8px;
+	height: 8px;
+	transform: rotate(45deg);
+}
+[data-sbTooltipContent] {
+    display: none;
+}
 .sb-menu.sb-combat-menu {
 	font-size: .95rem
 }
@@ -87,6 +119,13 @@
 	height: 16px;
 	width: 16px
 }
+.sb-inactive-sm {
+	position: absolute;
+	top: 1px;
+	left: 1px;
+	height: 13px;
+	width: 13px
+}
 .synergy-locked {
 	position: absolute;
 	top: 4px;
@@ -117,6 +156,9 @@
 .text-warning-disabled,body.darkMode .text-warning-disabled {
 	color: #e5ae67!important;
 	text-decoration: line-through
+}
+.sb-pre-line {
+	white-space: pre-line;
 }
 .sb-left {
 	margin-left: 0!important

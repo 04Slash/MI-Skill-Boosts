@@ -3,7 +3,9 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 	await loadModule('src/Patching.mjs');
 	const lang = await loadModule('localization.mjs'),
 		{ SBSave, SkillBoostsIcon, SkillBoostsSynergy, SBAgilitySelect, customColorSetting, agiCostSetting } = await loadModule('src/SBClasses.mjs'),
-		{ getMelvorModifiers, getAbyssalModifiers, sortModdedSkill } = await loadModule('src/ModifierData.mjs'),
+		{ getCommonModifiers, getMelvorModifiers, getAbyssalModifiers, sortModdedSkill } = await loadModule('src/ModifierData.mjs'),
+		{ MainTooltipController, AltTooltipController } = await loadModule('src/Tooltips.mjs'),
+		{ ImageLoader } = await loadModule('src/ImageLoader.mjs'),
 		getLang = (key) => {
 			if (!lang['lang'][key]) {
 				return `SkillBoosts: Undefined Lang`;
@@ -21,12 +23,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		defaultRealm = { id: getLangString('BANK_STRING_14'), name: getLangString('BANK_STRING_14'), media: assets.getURI('assets/media/main/skill_tree.svg') },
 		melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 		abyssalRealm = hasItA && game.realms.getObjectByID('melvorItA:Abyssal'),
+		eternalRealm = hasItA && game.realms.getObjectByID('melvorItA:Eternal'),
 		slotTypes = ['melvorD:Weapon', 'melvorD:Shield', 'melvorD:Helmet', 'melvorD:Platebody', 'melvorD:Platelegs', 'melvorD:Boots', 'melvorD:Gloves', 'melvorD:Cape', 'melvorD:Amulet', 'melvorD:Ring', 'melvorD:Gem', 'melvorD:Enhancement1', 'melvorD:Enhancement2', 'melvorD:Enhancement3', 'melvorD:Quiver', 'melvorD:Summon1', 'melvorD:Consumable'],
 		providedRunes = ['melvorD:Air_Rune', 'melvorD:Water_Rune', 'melvorD:Earth_Rune', 'melvorD:Fire_Rune', 'melvorF:Nature_Rune', 'melvorF:Spirit_Rune', 'melvorF:Lava_Rune', 'melvorF:Mud_Rune', 'melvorTotH:Soul_Rune', 'melvorTotH:Infernal_Rune'];
 
 	let filterMode = 0,
 		massFiltering = 0,
-		lastDoubleTap = 0,
 		debugEnabled = false,
 		dustItems = [],
 		tempSkills = [],
@@ -34,61 +36,80 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		filterByIDSetting = [],
 		elementValueMap = new Map(),
 		greenBg, yellowBg, redBg, defaultBg, filteredBg,
-		filteringTT, equipmentTT, consumableTT, obstaclesTT, otherTT,
 		presetSettings, pGet,
 		windowWidth,
-		pillarIcon = getResourceUrl('assets/pillar.png'),
-		elitePillarIcon = getResourceUrl('assets/elite_pillar.png'),
-		abyssalPillarIcon = getResourceUrl('assets/abyssal_pillar.png'),
+		lockedSynergyImg = assets.getURI('assets/media/skills/summoning/synergy_locked.svg'),
 		passiveImg = getResourceUrl('assets/passive_slot_filled.png'),
-		passiveIcon = createElement('img', {
-			className: 'inactive-sb',
-			attributes: [['src', passiveImg]]
-		});
+		passiveIcon = createImgNode(passiveImg, 'inactive-sb'),
+		infotips = generateInfotips();
 
-	function tooltipTemplate(text, bg, cls = '') {
-		let str = `•<span class="font-w600 ${cls}"`;
-		if (bg) str += ` style="background-color: ${bg}"`;
-		str += `>${text}</span><br>`;
-		return str;
+	game.agility.pillars.forEach(pillar => {
+		if (!pillar.isModded) {
+			pillar._media = getResourceUrl(`assets/${pillar.localID}.png`);
+		} else {
+			let count = pillar.slot.obstacleCount;
+			if (count === 10)
+				pillar._media = getResourceUrl('assets/pillar.png');
+			else if (count === 15)
+				pillar._media = getResourceUrl('assets/elite_pillar.png');
+			else if (count === 12)
+				pillar._media = getResourceUrl('assets/abyssal_pillar.png');
+		}
+	});
+
+	function createInfotip(text, bg, colorClass = '') {
+		let template = createElement('div');
+		let textNode = createElement('span', { text: text, className: 'ml-1' });
+		let icon = createElement('span', { text: '[ . ]' });
+		if (bg)
+			icon.style = `background-color: ${bg};color: ${bg}`;
+		else if (colorClass !== '')
+			icon.className = [`badge-pill bg-${colorClass} text-${colorClass} font-size-xs`];
+		else
+			textNode.textContent = `•${textNode.textContent}`;
+		if (bg || colorClass !== '')
+			template.append(icon);
+		template.append(textNode);
+		return template;
 	}
 
-	function generateTTStrings() {
-		let textClass = 'font-w600 d-flex justify-content-center text-info font-size-h6 mb-1 border-bottom',
-			filteredBackground = `${tooltipTemplate(getLang('FILTERED_ICON'), filteredBg)}`;
-		let baseTT = `${tooltipTemplate(getLang('ITEM_DESC_1'), greenBg)}
-			${tooltipTemplate(getLang('ITEM_DESC_2'), defaultBg)}
-			${tooltipTemplate(getLang('ITEM_DESC_3'), yellowBg)}
-			${tooltipTemplate(getLang('ITEM_DESC_4'), redBg)}
-			${filteredBackground}`;
-		filteringTT = `${getLang('FILTERING_DESC_1')}<br>${getLang('FILTERING_DESC_2')}<br>${getLang('FILTERING_DESC_3')}`;
-		equipmentTT = `<div class="${textClass}">${getLangString('COMBAT_MISC_18')}</div>
-			${baseTT}
-			${tooltipTemplate(getLang('POI_DESC_1'), null, 'badge-pill bg-danger')}
-			•<img class="skill-icon-xxs" src=${passiveImg}>${getLang('PASSIVE')}</img><br>
-			${tooltipTemplate(getLang('ITEM_DESC_6'))}
-			${tooltipTemplate(getLang('ITEM_DESC_7'))}
-			${tooltipTemplate(getLang('ITEM_DESC_8'))}`;
-		consumableTT = `<div class="${textClass}">${getLangString('EQUIP_SLOT_Consumable')}</div>
-			${baseTT}
-			${tooltipTemplate(getLang('ITEM_DESC_5'), null, 'badge-pill bg-warning')}
-			•<img class='skill-icon-xxs' src=${assets.getURI('assets/media/skills/summoning/synergy_locked.svg')}>${getLang('LOCKED_SYNERGY')}</img><br>
-			${tooltipTemplate(getLang('ITEM_DESC_6'))}`;
-		obstaclesTT = `<div class="${textClass}">${getLangString('GAME_GUIDE_142')}</div>
-			${tooltipTemplate(getLang('OBSTACLE_DESC_1'), greenBg)}
-			${tooltipTemplate(getLang('OBSTACLE_DESC_2'), defaultBg)}
-			${tooltipTemplate(getLang('OBSTACLE_DESC_3'), yellowBg)}
-			${tooltipTemplate(getLang('OBSTACLE_DESC_4'), redBg)}
-			${filteredBackground}
-			•<img class='skill-icon-xxs' src=${getResourceUrl('assets/inactive.png')}>${getLang('INACTIVE')}</img><br>
-			${tooltipTemplate(getLang('OBSTACLE_DESC_5'))}`;
-		otherTT = `<div class="${textClass}">${getLang('OTHERS')}</div>
-			${tooltipTemplate(getLang('PURCHASE_DESC_1'), greenBg)}
-			${tooltipTemplate(getLang('OBSTACLE_DESC_3'), yellowBg)}
-			${tooltipTemplate(getLang('OTHER_DESC_1'), redBg)}
-			${filteredBackground}
-			${tooltipTemplate(getLang('PURCHASE_DESC_3'))}
-			${tooltipTemplate(getLang('AUTOMATICALLY_HIDE'))}`;
+	function createImgNode(src, cls, text, returnNodes) {
+		let container = createElement('div');
+		let img = createElement('img', { attributes: [['src', src]], className: cls });
+		if (text) createElement('span', { text: text });
+		if (!returnNodes && text) container.append(img, text);
+		return returnNodes ? [img, text] : text ? container : img;
+	}
+
+	function generateInfotips() {
+		let colors = [greenBg, defaultBg, yellowBg, redBg, filteredBg],
+			textClass = 'font-w600 d-flex justify-content-center text-info font-size-h6 mb-1 border-bottom',
+			filteredTT = createInfotip(getLang('FILTERED_ICON'), filteredBg);
+
+		let baseTooltip = createElement('div');
+		for (let i = 1; i < 5; i++) { baseTooltip.append(createInfotip(getLang(`ITEM_DESC_${i}`), colors[i - 1])); }
+		baseTooltip.append(filteredTT.cloneNode(true));
+
+		const addContainer = (elem) => createElement('div', { className: 'font-w400 font-size-sm' }).appendChild(elem).parentElement;
+
+		let filterInfotip = addContainer(createElement('div', { className: 'sb-pre-line', text: `${getLang('FILTERING_DESC_1')}\n${getLang('FILTERING_DESC_2')}\n${getLang('FILTERING_DESC_3')}` }));
+
+		let equipmentInfotip = addContainer(createElement('div', { className: textClass, text: getLangString('COMBAT_MISC_18') }));
+		equipmentInfotip.append(baseTooltip.cloneNode(true), createInfotip(getLang('POI_DESC_1'), null, 'danger'), createImgNode(passiveImg, 'skill-icon-xxs', getLang('PASSIVE')));
+		for (let i = 6; i < 8; i++) { equipmentInfotip.append(createInfotip(getLang(`ITEM_DESC_${i}`))); };
+
+		let consumableInfotip = addContainer(createElement('div', { className: textClass, text: getLangString('EQUIP_SLOT_Consumable') }));
+		consumableInfotip.append(baseTooltip.cloneNode(true), createInfotip(getLang('ITEM_DESC_5'), null, 'warning'), createImgNode(lockedSynergyImg, 'skill-icon-xxs', getLang('LOCKED_SYNERGY')), createInfotip(getLang('ITEM_DESC_6')));
+
+		let obstacleInfotip = addContainer(createElement('div', { className: textClass, text: getLangString('GAME_GUIDE_142') }));
+		for (let i = 1; i < 5; i++) { obstacleInfotip.append(createInfotip(getLang(`OBSTACLE_DESC_${i}`), colors[i - 1])); };
+		obstacleInfotip.append(filteredTT.cloneNode(true), createImgNode(getResourceUrl('assets/inactive.png'), 'skill-icon-xxs', getLang('INACTIVE')));
+		for (let i = 5; i < 7; i++) { obstacleInfotip.append(createInfotip(getLang(`OBSTACLE_DESC_${i}`))); };
+
+		let otherInfotip = addContainer(createElement('div', { className: textClass, text: getLang('OTHERS') }));
+		otherInfotip.append(createInfotip(getLang('PURCHASE_DESC_1'), greenBg), createInfotip(getLang('OBSTACLE_DESC_3'), yellowBg), createInfotip(getLang('OTHER_DESC_1'), redBg), filteredTT.cloneNode(true), createInfotip(getLang('PURCHASE_DESC_2')), createInfotip(getLang('AUTOMATICALLY_HIDE')));
+
+		return [filterInfotip, equipmentInfotip, consumableInfotip, obstacleInfotip, otherInfotip];
 	}
 
 	class SBRenderQueue {
@@ -152,7 +173,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			this.realmIcons = [];
 			this.iconContainers = [];
 			this.iconParents = [];
-			['Equipment', 'Consumable', 'Positive', 'Negative', 'Other'].forEach((category) => {
+			['Equipment', 'Consumable', 'Positive', 'Negative', 'Other'].forEach(category => {
 				let container = getElem(`SB-${category}-Icons`);
 				container.classList.add('row', 'no-gutters', 'justify-content-center', 'text-white');
 				this.iconContainers.push(container);
@@ -187,13 +208,14 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			}, [0, 0, 0, 0, 0]);
 		}
 		initMenu() {
-			skillBoosts.data.skills.forEach((skill) => { this.dropDownSkills.append(this.createDropdownItem(skill)); });
-			this.skillDropdown.append(this.getSkillItem(this.skill), this.skill.name);
+			skillBoosts.data.skills.forEach(skill => this.dropDownSkills.append(this.createDropdownItem(skill)));
+			this.skillDropdown.append(createImgNode((this.skill === game.attack ? game.combat.media : this.skill.media), 'resize-28 p-1'), this.getSkillName(this.skill));
 			let realmOptions = skillBoosts.data.skillRealms.get(this.skill.id);
 			if (realmOptions.includes(melvorRealm.id) && realmOptions.includes(abyssalRealm.id)) {
-				skillBoosts.data.realms.forEach((realm) => {
-					let icon = new SkillBoostsIcon('', realm, realm.media, realm.name, 28);
-					icon.onclick = () => skillBoosts.onRealmChange(realm.id);
+				skillBoosts.data.realms.forEach(realm => {
+					let icon = new SkillBoostsIcon('', realm, realm.media, true, 28);
+					icon.setTooltip(realm.name);
+					icon.container.onclick = () => skillBoosts.onRealmChange(realm.id);
 					icon.setBg('#6C757D');
 					icon.container.classList.replace('m-1', 'mx-1');
 					this.realmIcons.push(icon);
@@ -220,19 +242,19 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		}
 		appendCombatMenu() {
 			let _content = new DocumentFragment();
-			let container = createElement('div', { className: 'd-flex justify-content-center btn-group' });
-			let btnClasses = ['btn-secondary', 'btn-success', 'btn-info', 'btn-warning'];
-			let skills = [[game.attack], [game.ranged], [game.altMagic], [game.prayer, game.slayer]];
+			let container = _content.appendChild(createElement('div', { className: 'd-flex justify-content-center btn-group' }));
+			let btnClasses = ['btn-primary', 'btn-success', 'btn-info', 'btn-warning', 'btn-secondary', 'btn-danger'];
+			let skills = [game.attack, game.ranged, game.altMagic, game.prayer, game.slayer];
+			if (hasItA) skills.push(game.corruption);
 			skills.forEach((skill, i) => {
-				let skillName = skill.length === 1 ? skill[0].name : `${skill[0].name} / ${skill[1].name}`;
-				let btn = createElement('button', { className: `btn sb-btn ${btnClasses[i]} my-1 p-1`, text: skillName });
+				let btn = createElement('button', { className: `btn sb-btn ${btnClasses[i]} my-1 p-1`, text: skill.name });
 				btn.onclick = () => this.updateCombatSkill(skills);
 				container.append(btn);
 			});
 			this.iconMenu.before(_content);
 		}
 		updateCombatSkill(skills) {
-			skillBoosts.getRealmIcons(true).forEach((icon) => {
+			skillBoosts.getRealmIcons(true).forEach(icon => {
 				if (icon.skill.some(x => skills.includes(x)))
 					icon.snow();
 				else
@@ -242,7 +264,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		onSearchChange(query) {
 			let icons = skillBoosts.getRealmIcons(false, false);
 			if (query === '') {
-				icons.forEach((icon) => {
+				icons.forEach(icon => {
 					if (!icon.realms.includes(this.currentRealm) || (icon.isFiltered && !filterMode) || icon.isHidden || (icon.bgColor === redBg && get('hideRedBgs').includes(icon.category)))
 						icon.hide();
 					else
@@ -269,7 +291,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				};
 				const fuse = new Fuse(icons, options);
 				const result = fuse.search(query);
-				icons.forEach((icon) => { result.includes(icon) ? icon.show() : icon.hide(); });
+				icons.forEach(icon => { result.includes(icon) ? icon.show() : icon.hide(); });
 				if (result.length === 0) {
 					this.setSearchNone();
 				} else {
@@ -284,35 +306,30 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			this.searchBar.classList.remove('text-danger');
 		}
 		translate(element) {
-			element.getElementsByTagName('sb-lang').forEach((elem) => {
+			element.getElementsByTagName('sb-lang').forEach(elem => {
 				let id = elem.getAttribute('sb-lang-id');
-				elem.textContent = getLang(`${id}`);
+				elem.textContent = getLang(id);
 			});
 			this.searchBar.placeholder = `${getLang('SEARCH')}...`;
 		}
 		createTooltips() {
-			let tooltips = [filteringTT, equipmentTT, consumableTT, obstaclesTT, otherTT];
 			this.container.querySelectorAll('#SB-Info').forEach((info, i) => {
-				tippy(info, {
-					content: tooltips[i],
-					placement: 'top',
-					allowHTML: true,
-					interactive: false,
-					animation: false,
-				});
+				let elem = info.querySelector("[data-sbTooltipContent]");
+				if (elem == null)
+					return;
+				elem.innerHTML = '';
+				elem.append(infotips[i].cloneNode(true));
 			});
 		}
 		createDropdownItem(object) {
 			const item = createElement('a', { className: 'dropdown-item pointer-enabled' });
-			item.append(this.getSkillItem(object));
-			item.append(object.name);
+			item.append(createImgNode((object === game.attack ? game.combat.media : object.media), 'resize-28 p-1'));
+			item.append(this.getSkillName(object));
 			item.onclick = () => skillBoosts.onSkillChange(false, object.id);
 			return item;
 		}
-		getSkillItem(object) {
-			const img = createElement('img', { className: 'resize-28 p-1' });
-			img.src = object.media;
-			return img;
+		getSkillName(object) {
+			return (object === game.attack ? getLangString('PAGE_NAME_Combat') : object.name);
 		}
 		updateSelectedRealm(newRealm) {
 			let oldRealmIcon = this.realmIcons.find(x => x.item.id === this.currentRealm);
@@ -338,7 +355,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				skillBoosts.updateCartographyMap();
 		}
 		toggleMassFiltering(checked) {
-			skillBoosts.data.menus.forEach((menu) => { menu.massFilterToggle.checked = checked; });
+			skillBoosts.data.menus.forEach(menu => menu.massFilterToggle.checked = checked);
 			massFiltering = checked ? 1 : 0;
 			skillBoosts.data.menuStates.set('mf', `${massFiltering}`);
 			SBSave.save();
@@ -353,7 +370,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			skillBoosts.setClassByLength();
 		}
 		toggleAllFilteredIcons() {
-			skillBoosts.getSkillIcons().filter(x => x.isFiltered).forEach((icon) => {
+			skillBoosts.getSkillIcons().filter(x => x.isFiltered && (!filterMode || x.realms.includes(this.currentRealm))).forEach(icon => {
 				filterMode ? icon.show() : icon.hide();
 			});
 		}
@@ -380,14 +397,14 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			else
 				console.warn(`[Skill Boosts]: ${icon.category} for ${icon.item.id} was not found. Updating icon failed.`);
 		}
-		createPresetSwal(presets, skill, presetAPI) {
+		createPresetSwal(presets, presetAPI) {
 			let container = createElement('div', { className: 'block block-rounded-extra mb-0 p-3' });
 
 			let createPreset = container.appendChild(createElement('button', { className: 'btn btn-primary col-12 mb-2', text: getLang('CREATE_PRESET') }));
 			createPreset.onclick = () => presetAPI.uiShowCreate();
 
 			let presetContainer = container.appendChild(createElement('div'));
-			presets.forEach((preset) => {
+			presets.forEach(preset => {
 				let presetElem = skillBoosts.createDividerElem(presetContainer, 'd-flex border-bottom');
 				presetElem.classList.replace('border-dark', 'border-secondary');
 
@@ -395,8 +412,8 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				equipBtn.onclick = () => presetAPI.equipPresetByGID(preset.gid);
 
 				let textContainer = presetElem.appendChild(createElement('div', { className: 'col-8 text-left my-2 font-size-base' }));
-				let presetIcon = textContainer.appendChild(createElement('img', { className: 'resize-28 p-1', attributes: [['src', presetAPI.uiGetPresetIcon(preset).media]] }));
-				let presetName = textContainer.append(preset.title);
+				textContainer.appendChild(createImgNode(presetAPI.uiGetPresetIcon(preset).media, 'resize-28 p-1'));
+				textContainer.append(preset.title);
 
 				let editBtn = presetElem.appendChild(createElement('button', { className: 'btn btn-sm btn-info col-2 my-2', text: getLang('EDIT') }));
 				editBtn.onclick = () => presetAPI.uiShowEditByGID(preset.gid);
@@ -427,7 +444,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			else if (pGet('onePreset') && skillPresets.length === 1)
 				presetAPI.uiShowEditByGID(skillPresets[0].gid);
 			else
-				this.createPresetSwal(skillPresets, skill, presetAPI);
+				this.createPresetSwal(skillPresets, presetAPI);
 		}
 		toggleAllDebugBtns() {
 			skillBoosts.data.menus.forEach(menu => {
@@ -449,6 +466,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 	class SkillBoosts {
 		constructor() {
 			this.renderQueue = new SBRenderQueue();
+			this.mainTooltipController = MainTooltipController;
 			this.data = { skills: [], realms: [defaultRealm, melvorRealm, abyssalRealm], modifierMap: new MultiMap(2), menus: new Map(), icons: new Map(), skillRealms: new Map(), headers: new Map(), hiddenModifiers: new Map(), filteredItems: new Map(), menuStates: new Map(), realmStates: new Map(), moddedModifiers: [], agiSelectArr: [] };
 			this.agiCosts = false;
 		}
@@ -478,7 +496,6 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		}
 		initSettings() {
 			this.updateBackgrounds(get('colorBgs'), true);
-			generateTTStrings();
 			filterByIDSetting = get('filter').toLowerCase().replace(/\s/g, '').split(",");
 			if (!this.data.filteredItems.has('agi'))
 				this.data.filteredItems.set('agi', []);
@@ -487,26 +504,24 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		}
 		initSkills() {
 			let sidebarItems = [{ id: 'melvorD:Attack' }, ...sidebar.category('Passive').items(), ...sidebar.category('Non-Combat').items()];
-			sidebarItems.forEach((item) => {
+			sidebarItems.forEach(item => {
 				let skill = game.skills.find(x => x.id === item.id);
 				if (!skill)
 					skill = tempSkills.find(x => x.namespace === item.id.substr(0, item.id.indexOf(':')));
 				if (skill === undefined)
-					return console.error(`[Skill Boosts]: ${item.id} was not recognised as a valid skill. The Sidebar's ID OR Namespace must match the skill's ID OR Namespace`);
+					return console.warn(`[Skill Boosts]: ${item.id} was not recognised as a valid Skill Boosts skill. The Sidebar's ID OR Namespace must match the skill's ID OR Namespace. If you are not trying to add a skill into Skill Boosts, you can ignore this.`);
 				if (!skill.isModded || this.data.headers.has(item.id))
 					this.data.skills.push(skill);
-				if (!skill.isModded) {
-					this.data.skillRealms.set(skill.id, skill.getRealmOptions().map(x => x.id));
-					this.data.headers.set(skill.id, skill.header);
-				}
+				if (!skill.isModded)
+					this.data.skillRealms.set(skill.id, skill.getRealmOptions().filter(x => x !== eternalRealm).map(x => x.id));
 			});
 			let realms = hasItA ? [melvorRealm.id, abyssalRealm.id] : [melvorRealm.id];
-			[game.attack, game.township].forEach(skill => this.data.skillRealms.set(skill.id, realms));
-			[game.altMagic, game.cartography].forEach(skill => this.data.skillRealms.set(skill.id, [melvorRealm.id]));
+			['melvorD:Attack', 'melvorD:Township'].forEach(skillID => this.data.skillRealms.set(skillID, realms));
+			['melvorD:Magic', 'melvorAoD:Cartography'].forEach(skillID => this.data.skillRealms.set(skillID, [melvorRealm.id]));
 			this.data.headers.set(game.attack.id, combatAreaMenus.categoryMenu.parentElement.lastElementChild);
 		}
 		createMenus() {
-			this.data.skills.forEach((skill) => {
+			this.data.skills.forEach(skill => {
 				let menu = new SkillBoostMenu(skill);
 				this.data.menus.set(skill.id, menu);
 				this.moveMenu(skill.id, menu);
@@ -522,16 +537,18 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 					menu.toggleMenu(true);
 
 				if (!this.data.realmStates.has(skill.id))
-					this.data.realmStates.set(skill.id, melvorRealm.id);
+					this.data.realmStates.set(skill.id, skill.currentRealm.id);
 			});
+			if (hasItA)
+				this.data.realmStates.set(game.harvesting.id, abyssalRealm.id);
 		}
 		initModifiers() {
-			this.data.skills.forEach((skill) => {
-				this.addModifiersToMap(melvorRealm.id, skill.id, getMelvorModifiers(skill));
+			this.data.skills.forEach(skill => {
+				this.addModifiersToMap(melvorRealm.id, skill.id, getMelvorModifiers(skill.id));
 				if (hasItA)
-					this.addModifiersToMap(abyssalRealm.id, skill.id, getAbyssalModifiers(skill));
+					this.addModifiersToMap(abyssalRealm.id, skill.id, getAbyssalModifiers(skill.id));
 			});
-			this.data.moddedModifiers.forEach((data) => {
+			this.data.moddedModifiers.forEach(data => {
 				data.skills = data.skills === undefined ? this.data.skills : Array.from(data.skills);
 				if (data.melvorModifiers.length > 0)
 					data.skills.forEach(skill => this.addModifiersToMap(melvorRealm.id, skill.id, data.melvorModifiers));
@@ -548,13 +565,10 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			redBg = v[2];
 			defaultBg = v[3];
 			filteredBg = v[4];
+			infotips = generateInfotips();
 			if (!onLoad) {
-				generateTTStrings();
-				this.getSkillIcons().forEach((icon) => this.menu.updateIcon(icon));
-				this.data.menus.forEach((menu) => {
-					menu.container.querySelectorAll('#SB-Info').forEach((tooltip) => tooltip._tippy.destroy());
-					menu.createTooltips();
-				});
+				this.getSkillIcons().forEach(icon => this.menu.updateIcon(icon));
+				this.data.menus.forEach(menu => menu.createTooltips());
 			}
 		}
 		render() {
@@ -676,10 +690,10 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			if (this.menu !== undefined && this.menu.searchBar.value !== '')
 				this.menu.onSearchChange(this.menu.searchBar.value);
 		}
-		updateMenu(newSkill) {
-			this.selectedSkill = newSkill;
+		updateMenu(newSkillID) {
+			this.selectedSkill = newSkillID;
 			if (this.menu === undefined)
-				this.menu = this.data.menus.get(newSkill);
+				this.menu = this.data.menus.get(newSkillID);
 			this.menu.toggleMenu(true);
 			this.menu.toggleFilterAlert();
 			let icons = this.getSkillIcons();
@@ -687,21 +701,21 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			icons.forEach(icon => this.menu.updateIcon(icon));
 			this.render();
 		}
-		updateForSkillChange(newSkill, isNewPage) {
-			if (!this.data.skills.some(x => x.id === newSkill && ((!isNewPage && !x.isUnlocked) || x.isUnlocked)))
+		updateForSkillChange(newSkillID, isNewPage) {
+			if (!this.data.skills.some(x => x.id === newSkillID && ((!isNewPage && !x.isUnlocked) || x.isUnlocked)))
 				return;
 			let oldMenu = this.menu;
-			this.menu = this.data.menus.get(newSkill);
+			this.menu = this.data.menus.get(newSkillID);
 
 			if (!oldMenu)
-				return this.updateMenu(newSkill);
+				return this.updateMenu(newSkillID);
 
-			if (!isNewPage && (oldMenu === this.menu || this.selectedSkill === newSkill))
+			if (!isNewPage && (oldMenu === this.menu || this.selectedSkill === newSkillID))
 				return; // Don't update when using the dropdown and selecting the same skill
 			if (isNewPage && oldMenu.skillPage === this.menu.skillPage && this.menu.skillPage === this.skillPage)
 				return; // Don't update when clicking the same skill in the sidebar
 
-			this.updateMenu(newSkill);
+			this.updateMenu(newSkillID);
 
 			if (isNewPage && oldMenu.skillPage !== oldMenu.skill) {
 				oldMenu.remove(); // Remove the old menu if it's not on the correct skill page otherwise you get 2 menus on 1 page
@@ -710,7 +724,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 
 			if (isNewPage && this.skillPage === this.menu.skillPage)
 				return; // Only move the menu if the new menu isn't on the new page
-			if (!this.moveMenu(isNewPage ? newSkill : this.skillPage))
+			if (!this.moveMenu(isNewPage ? newSkillID : this.skillPage))
 				return;
 
 			if (oldMenu !== this.menu && oldMenu.skillPage !== null) {
@@ -718,41 +732,46 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				oldMenu.skillPage = null;
 			}
 		}
-		onSkillChange(isNewPage, skill = this.skillPage) {
-			this.updateForSkillChange(skill, isNewPage);
+		onSkillChange(isNewPage, skillID = this.skillPage) {
+			this.updateForSkillChange(skillID, isNewPage);
 			this.setClassByLength();
 			this.setIconSearch();
 		}
-		updateForRealmChange(newRealm, icons) {
-			if (!hasItA)
+		updateForRealmChange(newRealmID, icons) {
+			if (!hasItA || (!this.data.realms.some(x => x.id === newRealmID) && newRealmID !== undefined))
 				return;
 			let realmState = get('realmStates');
-			if (newRealm === undefined)
-				newRealm = realmState === 'Auto' ? this.data.realmStates.get(this.selectedSkill) : realmState;
-			if (this.menu === undefined || newRealm === this.menu.currentRealm || ['melvorAoD:Archaeology', 'melvorAoD:Cartography', 'melvorItA:Harvesting'].includes(this.selectedSkill))
+			if (newRealmID === undefined)
+				newRealmID = realmState === 'Auto' ? this.data.realmStates.get(this.selectedSkill) : realmState;
+			if (this.menu === undefined || newRealmID === this.menu.currentRealm || ['melvorAoD:Archaeology', 'melvorAoD:Cartography', 'melvorItA:Harvesting'].includes(this.selectedSkill))
 				return;
 			if (!icons)
 				icons = this.getSkillIcons();
-			icons.forEach((icon) => {
-				if (!icon.realms.includes(newRealm) || (icon.isFiltered && !filterMode) || icon.isHidden || (icon.bgColor === redBg && get('hideRedBgs').includes(icon.category)))
+			icons.forEach(icon => {
+				if (!icon.realms.includes(newRealmID) || (icon.isFiltered && !filterMode) || icon.isHidden || (icon.bgColor === redBg && get('hideRedBgs').includes(icon.category)))
 					icon.hide();
 				else
 					icon.show();
 			});
-			this.menu.updateSelectedRealm(newRealm);
+			this.menu.updateSelectedRealm(newRealmID);
 			this.setIconSearch();
 			if (realmState === 'Auto') {
-				this.data.realmStates.set(this.selectedSkill, newRealm);
+				this.data.realmStates.set(this.selectedSkill, newRealmID);
 				SBSave.save();
 			}
 		}
-		onRealmChange(realm) {
-			this.updateForRealmChange(realm);
+		onRealmChange(realmID) {
+			this.updateForRealmChange(realmID);
 			this.setClassByLength();
 			this.setIconSearch();
 		}
 		moveMenu(skillID, menu = this.menu) {
-			let header = this.data.headers.get(skillID);
+			let skill = game.skills.getObjectByID(skillID),
+				header;
+			if (skill !== undefined)
+				header = skill.header;
+			if (header == undefined)
+				header = this.data.headers.get(skillID);
 			if (header == null)
 				return console.warn(`[Skill Boosts] No Skill Header found for: ${skillID}`);
 			menu.skillPage = skillID;
@@ -765,13 +784,10 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				icon = new SkillBoostsSynergy(category, item);
 				icon.slots = ['Summon1', 'Summon2'];
 			} else {
-				let media;
-				if (item instanceof AgilityPillar)
-					media = item.slot.level === 120 ? elitePillarIcon : item.slot.abyssalLevel ? abyssalPillarIcon : pillarIcon;
-				else
-					media = item.media;
-				icon = new SkillBoostsIcon(category, item, media);
+				icon = new SkillBoostsIcon(category, item);
 			}
+			if (game.openPage.skills && game.openPage.skills[0] === skill && realms.includes(this.data.realmStates.get(skill.id)))
+				icon.setImage(item.media);
 
 			if (item instanceof EquipmentItem)
 				icon.slots = item.validSlots.map(x => x.localID);
@@ -786,7 +802,8 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 					icon.abyssalText = modifiers.abyssalText;
 					icon.abyssalMods = modifiers.abyssalMods;
 				}
-			} else if (item.description !== undefined) {
+			}
+			if (modifiers === undefined || [...modifiers.melvorText, ...modifiers.abyssalText].length <= 0) {
 				if (realms.includes('melvorD:Melvor'))
 					icon.melvorText = [item.description];
 				if (realms.includes('melvorItA:Abyssal'))
@@ -796,7 +813,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			icon.elem = elem;
 			icon.skill = skill.id;
 			icon.realms = [...realms, defaultRealm.id];
-			this.data.menus.get(skill.id).iconContainers[elem].appendChild(icon.container);
+			this.data.menus.get(skill.id).iconContainers[elem].appendChild(icon);
 			let id = category === 'Synergy' ? `${item.summons[0].id}+${item.summons[1].id}` : item.id;
 
 			if (this.data.filteredItems.has(id) && this.data.filteredItems.get(id).includes(skill.id)) {
@@ -823,9 +840,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 
 			this.addIconsToMap(this.data.icons, skill.id, icon);
 		}
-		getAllIcons() {
+		getAllIcons(exclude) {
 			let icons = [];
-			this.data.icons.forEach((iconArr) => { icons.push(...iconArr); });
+			this.data.icons.forEach((iconArr, skill) => {
+				if (skill !== exclude)
+					icons.push(...iconArr);
+			});
 			return icons;
 		}
 		getSkillIcons(removeRedBgs, removeFiltered, removeHidden, skill = this.selectedSkill) {
@@ -859,7 +879,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			else
 				icons = this.getAllIcons().filter(x => x.skill === oIcon.skill && x.item === oIcon.item);
 			oIcon.isFiltered ? this.removeFilteredItem(oIcon) : this.addFilteredItem(oIcon);
-			icons.forEach((icon) => {
+			icons.forEach(icon => {
 				this.toggleFilterState(icon, !isFiltered, true);
 				if (!icon.isFiltered)
 					this.menu.updateIcon(icon);
@@ -911,12 +931,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				object.modifiers.forEach(mod => modifiers.push({ mod: mod, inverted: false }));
 
 			if (object.combatEffects !== undefined) {
-				object.combatEffects.forEach((effect) => {
+				object.combatEffects.forEach(effect => {
 					if (effect.effect !== undefined) {
 						let statGroup = effect.effect.statGroups;
 						if (statGroup.stacks !== undefined) {
 							if (statGroup.stacks.modifiers !== undefined)
-								statGroup.stacks.modifiers.forEach(mod => modifiers.push({ mod: mod, inverted: false }));
+								statGroup.stacks.modifiers.forEach(mod => modifiers.push({ mod: mod, inverted: (effect.effect.target === 'Target') }));
 							if (statGroup.stacks.combatEffects !== undefined)
 								statGroup.stacks.combatEffects.forEach(mod => modifiers.push({ mod: mod, inverted: true }));
 						}
@@ -937,9 +957,9 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			if (object.conditionalModifiers !== undefined) {
 				object.conditionalModifiers.forEach(mods => {
 					if (mods.modifiers !== undefined)
-						mods.modifiers.forEach(mod => modifiers.push({ mod: mod, inverted: false }));
+						mods.modifiers.forEach(mod => modifiers.push({ mod: mod, inverted: false, conditionals: (mods.condition.conditions || [mods.condition]) }));
 					if (mods.enemyModifiers !== undefined)
-						mods.enemyModifiers.forEach(mod => modifiers.push({ mod: mod, inverted: true }));
+						mods.enemyModifiers.forEach(mod => modifiers.push({ mod: mod, inverted: true, conditionals: (mods.condition.conditions || [mods.condition]) }));
 				});
 			}
 			return modifiers;
@@ -949,27 +969,29 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				modifiers = { melvorMods: [], melvorText: [], abyssalMods: [], abyssalText: [] };
 			if (itemModifiers.length <= 0 || (isNeg && (item instanceof AgilityObstacle || item instanceof AgilityPillar) && game.agility.hasMasterRelic(melvorRealm)))
 				return { realms, modifiers };
-			this.data.realms.forEach((realm) => {
+
+			this.data.realms.forEach(realm => {
 				if (!this.data.skillRealms.get(skill.id).includes(realm.id))
 					return;
-				if (item instanceof WeaponItem && skill.isCombat && ((item.damageType.id === 'melvorItA:Abyssal' && realm !== abyssalRealm) || (item.damageType.id === 'melvorD:Normal' && realm !== melvorRealm)))
+				const hasDamageType = (obj) => (!obj || !obj.damageType || (obj.damageType.id === 'melvorItA:Abyssal' && realm === abyssalRealm) || (obj.damageType.id === 'melvorD:Normal' && realm === melvorRealm));
+				if (item instanceof WeaponItem && (skill.isCombat || skill === game.thieving) && !hasDamageType(item))
 					return;
 				if (realm === abyssalRealm && (item instanceof EquipmentItem && ['melvorD:Mining_Gloves', 'melvorD:Gem_Gloves', 'melvorF:Scroll_Of_Essence'].includes(item.id)))
 					return;
-				if (item && item.consumesOn && (item.consumesOn.some(x => (x.realms !== undefined && !x.realms.has(realm)) || (x.actions !== undefined && [...x.actions].some(y => y.realm !== realm)))))
+				if (item && item.consumesOn && (item.consumesOn.some(x => x && ((x.realms && !x.realms.has(realm)) || (x.actions && [...x.actions].some(y => y.realm !== realm))))))
 					return;
-				const searchMods = this.data.modifierMap.get(realm.id, skill.id),
+				const searchMods = [...getCommonModifiers(skill.id), ...this.data.modifierMap.get(realm.id, skill.id)],
 					gpCurr = realm === melvorRealm ? game.gp : game.abyssalPieces,
 					scCurr = realm === melvorRealm ? game.slayerCoins : game.abyssalSlayerCoins,
 					isApplicable = (x, y) => (x.modifier && x.isNegative === (y ? !isNeg : isNeg) && (!y || skill === game.attack) && !x.modifier.disabled),
+					isCorrupted = (x) => (!x || !x.group || (x.group.id === 'melvorItA:Corruption' && realm === abyssalRealm)),
 					hasRealm = (x) => (!x.realm || x.realm === realm),
-					hasCategory = (x) => (!x.category || (x.category.realm && x.category.realm === realm) || (x.category.namespace === realm.namespace)),
-					hasCurrency = (x) => (!x.currency || x.currency === gpCurr || (skill === game.attack && x.currency === scCurr)),
-					hasAction = (x) => (!x.action || (x.action.realm === realm && ((x.action.potions && x.action.potions[0].action === skill) || (!x.action.skill || (!x.action.potions && x.action.skill === skill))))),
-					hasDamageType = (x) => (!x.damageType || (x.damageType.id === 'melvorItA:Abyssal' && realm === abyssalRealm) || (x.damageType.id === 'melvorD:Normal' && realm === melvorRealm)),
 					hasSkill = (x) => (!x.skill || x.skill === skill || (x.skill.isCombat && skill === game.attack)),
+					hasCategory = (x, category) => (!x[category] || (x[category].realm && x[category].realm === realm) || (x[category].namespace === realm.namespace || x[category].namespace === 'melvorF' && realm === melvorRealm)),
+					hasAction = (x) => (!x.action || (x.action.realm === realm && ((x.action.potions && x.action.potions[0].action === skill) || (!x.action.skill || (!x.action.potions && x.action.skill === skill))))),
+					hasCurrency = (x) => (!x.currency || x.currency === gpCurr || (skill === game.attack && x.currency === scCurr)),
 					filterStardust = (x) => (!x.item || skill !== game.astrology || ((['melvorF:Stardust', 'melvorF:Golden_Stardust'].includes(x.item.id) && realm === melvorRealm) || (x.item.id === 'melvorItA:Abyssal_Stardust' && realm === abyssalRealm))),
-					foundMods = itemModifiers.filter(({ mod, inverted }) => isApplicable(mod, inverted) && hasRealm(mod) && hasCategory(mod) && hasAction(mod) && hasCurrency(mod) && hasDamageType(mod) && hasSkill(mod) && filterStardust(mod) && searchMods.some(y => y === mod.modifier.id));
+					foundMods = itemModifiers.filter(({ mod, inverted, conditionals }) => isApplicable(mod, inverted) && hasRealm(mod) && hasSkill(mod) && hasCategory(mod, 'category') && hasCategory(mod, 'subcategory') && hasAction(mod) && hasCurrency(mod) && hasDamageType(mod) && (!conditionals || (conditionals.every(x => hasDamageType(x)) && conditionals.every(x => isCorrupted(x)))) && filterStardust(mod) && searchMods.some(y => y === mod.modifier.id));
 				if (foundMods.length > 0) {
 					realms.push(realm.id);
 					let realmMods = realm.id === 'melvorD:Melvor' ? 'melvorMods' : 'abyssalMods';
@@ -987,13 +1009,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			return { realms, modifiers };
 		}
 		filterEquipment() {
-			let specialItems = [{ itemID: 'melvorD:Barbarian_Gloves', skill: game.fishing }, { itemID: 'melvorF:Jesters_Hat', skill: game.thieving }, { itemID: 'melvorF:Sailors_Top', skill: game.fishing }];
+			let specialItems = [{ itemID: 'melvorD:Barbarian_Gloves', skill: game.fishing, realms: [melvorRealm.id] }, { itemID: 'melvorF:Jesters_Hat', skill: game.thieving, realms: [melvorRealm.id, abyssalRealm.id] }, { itemID: 'melvorF:Sailors_Top', skill: game.fishing, realms: [melvorRealm.id, abyssalRealm.id] }];
 			if (mod.manager.getLoadedModList().includes('[Myth] Music'))
-				specialItems.push({ itemID: 'mythMusic:Concert_Pass', skill: game.music });
+				specialItems.push({ itemID: 'mythMusic:Concert_Pass', skill: game.music, realms: [melvorRealm.id] });
 			let hasModifiers = (x) => (x.modifiers && x.modifiers.length > 0) || (x.conditionalModifiers && x.conditionalModifiers.length > 0),
 				allEquipment = game.items.equipment.filter(x => x.providedRunes.length > 0 || filterSetting(x) && (hasModifiers(x) && !['Golbin Raid', 'Events'].includes(x.category))),
-				relics = game.currentGamemode.id === 'melvorAoD:AncientRelics',
-				lesserRelicDrop = game.woodcutting.rareDrops.find(x => x.item.id.includes('_Lesser_Relic'));
+				lesserRelicDrops = game.woodcutting.rareDrops.filter(x => x.item.id.includes('_Lesser_Relic'));
 
 			specialItems.forEach(({ itemID }) => {
 				let item = game.items.getObjectByID(itemID);
@@ -1002,8 +1023,8 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			});
 			this.sortEquipment(allEquipment);
 
-			allEquipment.forEach((item) => {
-				if (item.id.includes('_Lesser_Relic') && !lesserRelicDrop.gamemodes.includes(game.currentGamemode))
+			allEquipment.forEach(item => {
+				if (item.id.includes('_Lesser_Relic') && !lesserRelicDrops.some(x => x.gamemodes.includes(game.currentGamemode)))
 					return;
 				let isConsumable = item.validSlots.some(x => ['melvorD:Consumable', 'melvorD:Summon1'].includes(x.id)),
 					specialItem = specialItems.find(x => x.itemID === item.id),
@@ -1012,8 +1033,15 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				if (game.itemSynergies.has(item))
 					game.itemSynergies.get(item).forEach(itemSynergy => itemMods.push(...this.getItemMods(itemSynergy)));
 
-				if (specialItem !== undefined)
-					return this.createIcon(item, { melvorMods: itemMods.map(x => x.mod && x.mod.modifier.localID), melvorText: getPlainModifierDescriptions(itemMods.map(x => x.mod)), abyssalMods: [], abyssalText: [] }, [melvorRealm.id], specialItem.skill, 0, 'Equipment');
+				if (specialItem !== undefined) {
+					itemMods = itemMods.filter(x => !x.mod.isNegative);
+					let modifiers = { melvorMods: itemMods.map(x => x.mod && x.mod.modifier.localID), melvorText: getPlainModifierDescriptions(itemMods.map(x => x.mod)), abyssalMods: [], abyssalText: [] };
+					if (specialItem.realms.includes(abyssalRealm.id)) {
+						modifiers.abyssalMods = modifiers.melvorMods;
+						modifiers.abyssalText = modifiers.melvorText;
+					}
+					return this.createIcon(item, modifiers, specialItem.realms, specialItem.skill, 0, 'Equipment');
+				}
 
 				if (item.providedRunes.some(({ item }) => providedRunes.includes(item.id)))
 					return this.createIcon(item, undefined, [melvorRealm.id], game.altMagic, isConsumable ? 1 : 0, isConsumable ? 'Consumable' : 'Equipment');
@@ -1029,6 +1057,8 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 						continue;
 					if (this.data.skills[i] === game.altMagic && itemMods.some(x => x.mod.modifier && x.mod.modifier.id === 'melvorD:altMagicSkillXP' && x.mod.isNegative))
 						continue;
+					if (this.data.skills[i] === game.thieving && item.id === 'melvorItA:Netherite_Gloves')
+						continue;
 					let { realms, modifiers } = this.hasModifiers(false, this.data.skills[i], itemMods, item);
 					if (realms.length > 0)
 						this.createIcon(item, modifiers, realms, this.data.skills[i], isConsumable ? 1 : 0, isConsumable ? 'Consumable' : 'Equipment');
@@ -1036,22 +1066,19 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			});
 		}
 		equipmentOnClick(item, icon) {
-			let secondarySlot = item.validSlots.some(x => x.id === 'melvorD:Passive') ? getSlot('melvorD:Passive') : getSlot('melvorD:Enhancement3');
-			let listener;
-			if (nativeManager.isMobile) {
-				listener = 'touchstart';
-				this.onLongPress(icon.container, () => { this.equipmentCallback(icon, item, secondarySlot); }); //Why apple
-			} else {
-				listener = 'click';
-				icon.container.oncontextmenu = (e) => { e.preventDefault(), this.equipmentCallback(icon, item, secondarySlot); };
+			icon.container.onclick = () => this.equipmentCallback(icon, item, item.validSlots[0]);
+			if (item.validSlots.length <= 2) {
+				if (nativeManager.isMobile)
+					this.onLongPress(icon.container, () => this.equipmentCallback(icon, item, getSlot('melvorD:Passive')));
+				else
+					icon.container.oncontextmenu = (e) => { e.preventDefault(), this.equipmentCallback(icon, item, getSlot('melvorD:Passive')); };
 			}
-			this.onDoubleTap(icon.container, listener, () => { this.equipmentCallback(icon, item, getSlot('melvorD:Enhancement2')); }, () => { this.equipmentCallback(icon, item, item.validSlots[0]); });
 		}
-		equipmentCallback(icon, item, slot) {
+		equipmentCallback(icon, item, slot, ignore = false) {
 			let isConsumable = item.validSlots.some(x => x.id === 'melvorD:Consumable' || x.id === 'melvorD:Summon1');
-			if (filterMode)
+			if (filterMode && !ignore)
 				this.filterIcon(icon);
-			else if (debugEnabled)
+			else if (debugEnabled && !ignore)
 				console.dir(icon);
 			else if (player.isEquipmentSlotUnlocked(slot) && item.validSlots.includes(slot)) {
 				let isEquipped = player.equipment.getSlotOfItem(item);
@@ -1093,18 +1120,15 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				icon.enhancementIcon.remove();
 				delete icon.enhancementIcon;
 			}
-			if (player.equipment.checkForItem(item)) {
+			if (player.equipment.itemSlotMap.has(item)) {
 				icon.setBg(greenBg);
-				let itemSlotID = player.equipment.getSlotOfItem(item).id;
-				if (itemSlotID === 'melvorD:Passive') {
+				let itemSlot = player.equipment.getSlotOfItem(item);
+				if (itemSlot.id === 'melvorD:Passive') {
 					icon.passiveIcon = passiveIcon;
 					icon.container.append(passiveIcon);
 				}
-				if (['melvorD:Enhancement1', 'melvorD:Enhancement2', 'melvorD:Enhancement3'].includes(itemSlotID)) {
-					let enhancementIcon = createElement('img', {
-						className: 'inactive-sb',
-						attributes: [['src', assets.getURI(`assets/media/bank/enhancement_${itemSlotID.match(/\d/)[0]}.png`)]]
-					});
+				if (['melvorD:Enhancement1', 'melvorD:Enhancement2', 'melvorD:Enhancement3'].includes(itemSlot.id)) {
+					let enhancementIcon = createImgNode(itemSlot.emptyMedia, 'inactive-sb');
 					icon.enhancementIcon = enhancementIcon;
 					icon.container.append(enhancementIcon);
 				}
@@ -1119,7 +1143,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			this.hideUndiscoveredIcons(icon, shouldHide, 'Equipment');
 		}
 		filterPotions() {
-			game.items.potions.filter(x => this.data.skills.includes(x.action) && filterSetting(x)).forEach((potion) => {
+			game.items.potions.filter(x => this.data.skills.includes(x.action) && filterSetting(x)).forEach(potion => {
 				let { realms, modifiers } = this.hasModifiers(false, potion.action, this.getItemMods(potion.stats), potion);
 				if (realms.length > 0)
 					this.createIcon(potion, modifiers, realms, potion.action, 1, 'Consumable');
@@ -1144,7 +1168,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			}
 			if (consumable.type === 'Familiar') {
 				if (nativeManager.isMobile)
-					this.onLongPress(icon.container, () => { this.equipmentCallback(icon, consumable, getSlot('melvorD:Summon2')); }); //Why apple
+					this.onLongPress(icon.container, () => { this.equipmentCallback(icon, consumable, getSlot('melvorD:Summon2')); });
 				else
 					icon.container.oncontextmenu = (e) => { e.preventDefault(), this.equipmentCallback(icon, consumable, getSlot('melvorD:Summon2')); };
 			}
@@ -1196,8 +1220,8 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			icon.setText(game.itemCharges.getCharges(item));
 		}
 		filterPOIs() {
-			game.cartography.worldMaps.forEach((map) => {
-				map.pointsOfInterest.filter(x => x.activeStats.hasStats && filterSetting(x)).forEach((poi) => {
+			game.cartography.worldMaps.forEach(map => {
+				map.pointsOfInterest.filter(x => x.activeStats.hasStats && filterSetting(x)).forEach(poi => {
 					for (var i = 0; i < this.data.skills.length; i++) {
 						let { realms, modifiers } = this.hasModifiers(false, this.data.skills[i], this.getItemMods(poi.activeStats));
 						if (realms.length > 0)
@@ -1222,15 +1246,15 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				}
 			};
 		}
-		getTravelCosts(poi) {
+		getTravelCosts(poi, returnGP) {
 			let path = poi.hex.map.computePath(poi.hex.map.playerPosition, poi.hex),
 				costs = path ? game.cartography.getTravelCosts(path) : new Costs(game);
 			if (!costs._currencies.has(game.gp))
 				costs.addCurrency(game.gp, 0);
-			return costs;
+			return returnGP ? costs._currencies.get(game.gp) : costs;
 		}
 		updatePOICosts(poi) {
-			let gpCost = this.getTravelCosts(poi)._currencies.get(game.gp);
+			let gpCost = this.getTravelCosts(poi, true);
 			let icon = this.getItemIcon(poi, true);
 			if (icon === undefined)
 				return;
@@ -1263,9 +1287,9 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		}
 		filterObstacles() {
 			// Sort ItA obstacles to the end of the list
-			let sortedObstacles = game.agility.actions.allObjects.sort((a, b) => (a.level + (a.abyssalLevel * 20)) - (b.level + (b.abyssalLevel * 20)));
+			let sortedObstacles = game.agility.sortedMasteryActions.sort((a, b) => (a.abyssalLevel - b.abyssalLevel));
 			let obstacles = [...sortedObstacles, ...game.agility.pillars.allObjects];
-			obstacles.filter(x => filterSetting(x)).forEach((obstacle) => {
+			obstacles.filter(x => filterSetting(x)).forEach(obstacle => {
 				for (var i = 0; i < this.data.skills.length; i++) {
 					let obstacleMods = this.getItemMods(obstacle);
 					if (get('showAllObstacles') && this.data.skills[i] === game.agility) {
@@ -1287,33 +1311,32 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			});
 		}
 		obstacleOnClick(obstacle, icon) {
-			icon.container.onclick = () => {
-				if (filterMode)
-					this.filterIcon(icon);
-				else if (debugEnabled)
-					console.dir(icon);
+			icon.container.onclick = () => this.obstacleCallback(obstacle, icon);
+		}
+		obstacleCallback(obstacle, icon, ignore = false) {
+			if (filterMode && !ignore)
+				this.filterIcon(icon);
+			else if (debugEnabled && !ignore)
+				console.dir(icon);
+			else {
+				if (!game.agility.isUnlocked || obstacle.isBuilt)
+					return;
+				let type = this.getObstacleType(obstacle);
+				let agiSelection = this.createObstacleSelect(obstacle, type);
+				if (get('instaBuildObstacle'))
+					agiSelection.buildObstacle();
 				else {
-					if (!game.agility.isUnlocked || obstacle.isBuilt)
-						return;
-					let type = this.getObstacleType(obstacle);
 					SwalLocale.fire({
-						html: this.createObstacleSelect(obstacle, type),
+						html: agiSelection,
 						showConfirmButton: this.canBuildObstacle(obstacle),
 						confirmButtonText: getLangString('MENU_TEXT_BUILD'),
 						showCancelButton: true,
 					}).then((result) => {
-						if (result.value) {
-							if (!this.canBuildObstacle(obstacle))
-								return;
-							if (type === 'Obstacle')
-								game.agility.buildObstacle(obstacle);
-							else
-								game.agility.buildPillar(obstacle);
-							this.renderObstacleBg();
-						}
+						if (result.value)
+							agiSelection.buildObstacle();
 					});
 				}
-			};
+			}
 		}
 		createInlineRequirement(media, text, textClass) {
 			let inlineContainer = createElement('span', { className: `no-wrap m-2` });
@@ -1326,9 +1349,9 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			const addReq = (media, qty, name, currentQty, item = null) => {
 				let text;
 				if (item)
-					text = `${formatNumber(currentQty)} / ${formatNumber(qty)}`;
+					text = `${formatNumber(currentQty, 2)} / ${formatNumber(qty, 2)}`;
 				else
-					text = formatNumber(qty);
+					text = formatNumber(qty, 2);
 				let newReq = this.createInlineRequirement(media, text, currentQty >= qty ? 'text-success' : 'text-danger');
 				if (tooltip)
 					this.createImageTooltip(newReq.children[0], name);
@@ -1341,13 +1364,11 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				addReq(currency.media, quantity, currency.name, currency.amount);
 			});
 		}
-		createImageTooltip(image, tooltip) {
-			let imageTooltip = tippy(image, {
-				placement: 'bottom',
-				interactive: false,
-				animation: false,
-			});
-			imageTooltip.setContent(tooltip);
+		createImageTooltip(parent, text) {
+			parent.setAttribute('data-sbMainTooltip', '');
+			let tooltipContent = createElement('div', { attributes: [['data-sbTooltipContent', '']], parent });
+			createElement('div', { className: 'font-size-sm', parent: tooltipContent, text });
+			MainTooltipController.init(parent);
 		}
 		getObstacleType(obstacle) {
 			return obstacle instanceof AgilityObstacle ? 'Obstacle' : 'Pillar';
@@ -1369,10 +1390,11 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			let agilitySelect = new SBAgilitySelect(obstacle, destroy, this.data.agiSelectArr);
 			return agilitySelect;
 		}
-		updateObstacleBg(obstacle) {
+		updateObstacleBg(obstacle, icon, hideIcon = true) {
 			let hasRequirements = this.hasObstacleRequirements(obstacle),
 				cost = this.getObstacleCost(obstacle, true);
-			let icon = this.getItemIcon(obstacle);
+			if (icon === undefined)
+				icon = this.getItemIcon(obstacle);
 			if (icon === undefined)
 				return;
 			let shouldHide = false;
@@ -1387,7 +1409,8 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				shouldHide = true;
 				icon.setBg(redBg);
 			}
-			this.hideUndiscoveredIcons(icon, shouldHide, 'Obstacle');
+			if (hideIcon)
+				this.hideUndiscoveredIcons(icon, shouldHide, 'Obstacle');
 		}
 		updateObstacleActive(obstacle) {
 			let requirement = this.getObstacleType(obstacle) === 'Obstacle' ? obstacle.category : obstacle.slot.obstacleCount;
@@ -1400,7 +1423,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 
 		}
 		filterPets() {
-			game.pets.filter(x => !filteredPets.includes(x) && !game.petManager.unlocked.has(x) && !x.ignoreCompletion && filterSetting(x)).forEach((pet) => {
+			game.pets.filter(x => !filteredPets.includes(x) && !game.petManager.unlocked.has(x) && !x.ignoreCompletion && filterSetting(x)).forEach(pet => {
 				for (var i = 0; i < this.data.skills.length; i++) {
 					let { realms, modifiers } = this.hasModifiers(false, this.data.skills[i], this.getItemMods(pet.stats));
 					if (realms.length > 0)
@@ -1427,12 +1450,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		filterPurchases() {
 			let purchases = game.shop.purchases.filter(x => x.category.id !== 'melvorD:GolbinRaid' && !game.shop.upgradesPurchased.has(x) && filterSetting(x));
 			for (var i = 0; i < this.data.skills.length; i++) {
-				purchases.filter(x => x.contains.stats !== undefined).forEach((purchase) => {
+				purchases.filter(x => x.contains.stats !== undefined).forEach(purchase => {
 					let { realms, modifiers } = this.hasModifiers(false, this.data.skills[i], this.getItemMods(purchase.contains.stats));
 					if (realms.length > 0)
 						this.createIcon(purchase, modifiers, realms, this.data.skills[i], 4, 'Purchase');
 				});
-				purchases.filter(x => x.contains.pet !== undefined).forEach((purchase) => {
+				purchases.filter(x => x.contains.pet !== undefined).forEach(purchase => {
 					let { realms, modifiers } = this.hasModifiers(false, this.data.skills[i], this.getItemMods(purchase.contains.pet.stats));
 					if (realms.length > 0) {
 						this.createIcon(purchase, modifiers, realms, this.data.skills[i], 4, 'Purchase');
@@ -1473,12 +1496,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			this.hideUndiscoveredIcons(icon, shouldHide, 'Purchase');
 		}
 		filterConstellations() {
-			game.astrology.actions.allObjects.filter(x => !game.astrology.isConstellationComplete(x) && filterSetting(x)).forEach((constellation) => {
+			game.astrology.actions.allObjects.filter(x => !game.astrology.isConstellationComplete(x) && filterSetting(x)).forEach(constellation => {
 				let skills = constellation.skills.filter(x => this.data.skills.includes(x));
 				if (constellation.skills.some(x => x.isCombat) && !constellation.skills.includes(game.attack))
 					skills.push(game.attack);
 				if (skills.length <= 0) return;
-				skills.forEach((skill) => {
+				skills.forEach(skill => {
 					let { realms, modifiers } = this.hasModifiers(false, skill, this.getConstellationModifiers(constellation));
 					if (realms.length > 0)
 						this.createIcon(constellation, modifiers, realms, skill, 4, 'Constellation');
@@ -1488,7 +1511,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		getConstellationModifiers(constellation) {
 			let modData = [...constellation.standardModifiers, ...constellation.uniqueModifiers, ...constellation.abyssalModifiers],
 				modifiers = [];
-			modData.forEach((mods) => { modifiers.push(...this.getItemMods(mods.stats)); });
+			modData.forEach(mods => modifiers.push(...this.getItemMods(mods.stats)));
 			return modifiers;
 		}
 		getConstellationMulti(constellation) {
@@ -1526,7 +1549,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				},
 				upgradeModifier = (constellation, id, type) => game.astrology[`upgrade${type}Modifier`](constellation, id);
 
-			['Standard', 'Unique', 'Abyssal'].forEach((type) => {
+			['Standard', 'Unique', 'Abyssal'].forEach(type => {
 				let menu = `${type.toLowerCase()}Modifiers`;
 				if (constellation[menu].length <= 0)
 					return;
@@ -1567,9 +1590,10 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			panel.setUpgradeCosts(game.astrology, constellation);
 			let dustContainer = createElement('div', { id: 'dusts', className: 'row no-gutters justify-content-center border-top border-dark border-4x mb-1' });
 			game.astrology.baseRandomItemChances.forEach((_, item) => {
-				if (item.id === 'melvorItA:Eternal_Stardust')
+				if (hasItA && item.id === 'melvorItA:Eternal_Stardust' && !eternalRealm.isUnlocked)
 					return;
-				let icon = new SkillBoostsIcon('Astrology', item, item.media, item.name);
+				let icon = new SkillBoostsIcon('Astrology', item, item.media, true);
+				icon.setTooltip(item.name);
 				icon.setBg(defaultBg);
 				dustContainer.append(icon);
 				dustItems.push(icon);
@@ -1597,7 +1621,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			this.hideUndiscoveredIcons(icon, shouldHide, 'Constellation');
 		}
 		filterSynergies() {
-			game.summoning.synergies.forEach((synergy) => {
+			game.summoning.synergies.forEach(synergy => {
 				for (var i = 0; i < this.data.skills.length; i++) {
 					if (this.data.skills[i] === game.attack)
 						continue;
@@ -1618,9 +1642,10 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 					if (qty1 > 0 && qty2 > 0) {
 						let slots = [getSlot('melvorD:Summon1'), getSlot('melvorD:Summon2')];
 						slots.forEach((slot, i) => {
-							if (player.equipment.checkForItem(synergy.summons[i].product))
-								player.unequipItem(player.selectedEquipmentSet, slot);
-							player.equipItem(synergy.summons[i].product, player.selectedEquipmentSet, slot, (i === 0 ? qty1 : qty2));
+							let item = synergy.summons[i].product;
+							if (player.equipment.itemSlotMap.has(item))
+								player.unequipItem(player.selectedEquipmentSet, player.equipment.getSlotOfItem(item));
+							player.equipItem(item, player.selectedEquipmentSet, slot, (i === 0 ? qty1 : qty2));
 						});
 						this.renderSynergyBg();
 						this.renderSynergyQty();
@@ -1720,7 +1745,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			menu.iconParents.forEach((parent, i) => {
 				if (shownIcons[i] === 0) {
 					if (i === 4)
-						menu.iconParents[3].classList.replace('sb-right', 'sb-other');
+						menu.iconParents[3].classList.add('mr-0');
 					return this.hideElement(parent);
 				}
 				this.showElement(parent);
@@ -1756,12 +1781,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 					lastParent = parent;
 			});
 		}
-		onLongPress(element, callback) {
+		onLongPress(element, callbackFn) {
 			let timer;
 			element.addEventListener('touchstart', (_e) => {
 				timer = setTimeout(() => {
 					timer = null;
-					callback();
+					callbackFn();
 				}, 500);
 			});
 
@@ -1771,24 +1796,72 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			element.addEventListener('touchend', cancel);
 			element.addEventListener('touchmove', cancel);
 		}
-		onDoubleTap(element, listener, doubleClickCallback, singleClickCallback) {
-			element.addEventListener(listener, function(e) {
-				e.preventDefault();
-				let lastSingleTap = new Date().getTime() - lastDoubleTap;
-				if ((lastSingleTap < 300) && (lastSingleTap > 0)) {
-					doubleClickCallback();
-				} else {
-					singleClickCallback();
-				}
-				lastDoubleTap = new Date().getTime();
+		createSelection(element, item) {
+			if (item instanceof EquipmentItem)
+				return this.createSlotSelection(element, item);
+			else
+				return this.createAgilitySelection(item);
+		}
+		getSlotInfo(slot, icon) {
+			let existingItem = player.equipment.getItemInSlot(slot.id);
+			let isEmpty = existingItem === game.emptyEquipmentItem;
+			let media = isEmpty ? slot.emptyMedia : existingItem.media;
+			return { existingItem, isEmpty, media };
+		}
+		createSlotSelection(element, item) {
+			this.slotSelectionIcons = [];
+			let container = createElement('div');
+			container.appendChild(createElement('div', { className: 'font-w600 text-center border-bottom', text: getLang('SELECT_SLOT') }));
+			let iconContainer = container.appendChild(createElement('div', { className: 'd-flex justify-content-center' }));
+			item.validSlots.forEach(slot => {
+				let { isEmpty, media } = this.getSlotInfo(slot);
+				let icon = new SkillBoostsIcon('', (isEmpty ? slot : item), media, isEmpty, 32);
+				if (isEmpty) icon.setTooltip(slot.emptyName);
+				icon.container.onclick = () => { this.equipmentCallback(element, item, slot, true), this.updateSlotSelection(); };
+				this.slotSelectionIcons.push({ slot, icon });
+				iconContainer.append(icon);
 			});
+			this.updateSlotSelection();
+			return container;
+		}
+		updateSlotSelection() {
+			for (let i = 0; i < this.slotSelectionIcons.length; i++) {
+				let slot = this.slotSelectionIcons[i].slot;
+				let { existingItem, isEmpty, media } = this.getSlotInfo(slot);
+				let icon = this.slotSelectionIcons[i].icon;
+				icon.item = (isEmpty ? slot : existingItem);
+				MainTooltipController.init(icon.container);
+				icon.setImage(media);
+				icon.setBg((isEmpty ? defaultBg : greenBg));
+				if (icon.tinyIcon) {
+					icon.tinyIcon.remove();
+					icon.tinyIcon = undefined;
+				}
+				if (!isEmpty)
+					icon.tinyIcon = icon.container.appendChild(createImgNode(slot.emptyMedia, 'sb-inactive-sm'));
+			}
+		}
+		createAgilitySelection(obstacle) {
+			let container = createElement('div');
+			container.appendChild(createElement('div', { className: 'font-w600 text-center border-bottom', text: getLang('SELECT_OBSTACLE') }));
+			let iconContainer = container.appendChild(createElement('div', { className: 'd-flex justify-content-center' }));
+			let obstacles = this.getObstacleType(obstacle) === 'Obstacle' ? game.agility.sortedMasteryActions : game.agility.pillars.allObjects;
+			let sortedObstacles = obstacles.filter(x => x.category === obstacle.category && x.realm === obstacle.realm && obstacle.slot.obstacleCount === x.slot.obstacleCount);
+			sortedObstacles.forEach(obst => {
+				let icon = new SkillBoostsIcon('', obst, obst.media, false, 32);
+				MainTooltipController.init(icon.container);
+				icon.container.onclick = () => this.obstacleCallback(obst, icon, true);
+				iconContainer.append(icon);
+				this.updateObstacleBg(obst, icon, false);
+			});
+			return container;
 		}
 		addModifiersToMap(realm, skillID, val) {
 			let map = this.data.modifierMap;
 			if (!map.has(realm, skillID))
 				map.set(val, realm, skillID);
 			else {
-				val.forEach((modifier) => {
+				val.forEach(modifier => {
 					if (!map.get(realm, skillID).includes(modifier))
 						map.get(realm, skillID).push(modifier);
 				});
@@ -1802,7 +1875,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		}
 		removeIcon(item, elem) {
 			this.data.icons.forEach((iconArr, skill) => {
-				iconArr.forEach((icon) => {
+				iconArr.forEach(icon => {
 					if (icon.item === item && (!elem || icon.elem === elem)) {
 						this.data.icons.get(skill).splice(this.data.icons.get(skill).indexOf(icon), 1);
 						icon.destroy();
@@ -1833,7 +1906,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			image.classList.replace('skill-icon-xs', 'icon-xs-sb');
 			let cost = createElement('span', {
 				className: menu.getTextClass(met),
-				text: formatNumber(qty)
+				text: formatNumber(qty, 2)
 			});
 			group.append(image, cost);
 			return group;
@@ -1842,7 +1915,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			let parent = createElement('div', {
 				className: 'font-w600'
 			});
-			let cost = createElement('span', {
+			createElement('span', {
 				className: menu.getTextClass(met),
 				children: costNodes,
 				parent
@@ -1852,25 +1925,23 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		addCostsAndRequirements(item, modifierContainer) {
 			let menu = shopMenu.quickbuyMenu;
 			let reqContainer = this.createDividerElem(modifierContainer, 'sb-font-2sm');
-			item.purchaseRequirements.forEach((requirement, i) => {
+			item.purchaseRequirements.forEach(requirement => {
 				reqContainer.append(this.createUnlockElement(menu, requirement.getNodes('icon-xs-sb m-1'), game.checkRequirement(requirement)));
 			});
 			let costs = item.costs;
 			let costContainer = this.createDividerElem(modifierContainer, 'font-size-sm');
-			costs.currencies.forEach((currencyCost, i) => {
+			costs.currencies.forEach(currencyCost => {
 				const amount = game.shop.getCurrencyCost(currencyCost, 1, 0);
 				const currency = currencyCost.currency;
 				costContainer.append(this.createCostElement(menu, currency.media, amount, currency.canAfford(amount)));
 			});
-			costs.items.forEach(({ item, quantity }, i) => {
-				costContainer.append(this.createCostElement(menu, item.media, quantity, menu.isItemCostMet(item, quantity)));
+			costs.items.forEach(({ item, quantity }) => {
+				costContainer.append(this.createCostElement(menu, item.media, quantity, game.bank.getQty(item) >= quantity));
 			});
 		}
 		getConstellationModifierSpans(constellation, container, spoilers = get('astroSpoilers')) {
-			['Standard', 'Unique', 'Abyssal'].forEach((baseType, i) => {
-				let type = `${baseType.toLowerCase()}Modifiers`;
-				let level = constellation.abyssalLevel > 0 ? 'abyssalLevel' : 'level';
-				constellation[type].forEach((mod, id) => {
+			['standard', 'unique', 'abyssal'].forEach(baseType => {
+				constellation[`${baseType}Modifiers`].forEach(mod => {
 					if (spoilers || this.isModifierUnlocked(constellation, mod.unlockRequirements)) {
 						let multi = mod.timesBought * this.getConstellationMulti(constellation),
 							nodes = this.getModifierNodes(mod.stats, multi, multi, true);
@@ -1891,41 +1962,54 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			});
 		}
 		createModifierNode(obj) {
-			return createElement('h5', {
-				className: `${obj.isDisabled ? 'text-disabled' : obj.isNegative ? 'text-danger' : obj.isInfo ? 'text-info' : 'text-success'} sb-font-2sm m-1`,
-				text: obj.text
-			});
+			let node = createElement('h5', { className: `${obj.isInfo ? 'text-info' : getStandardDescTextClass(obj, false)} sb-font-2sm m-1` });
+			if (obj.text.indexOf('text-warning') > 0)
+				obj.text = obj.text.slice(0, obj.text.search('text-warning') - 13);
+			node.innerHTML = applyDescriptionModifications(obj.text);
+			return node;
 		}
-		getModifierNodes(statObject, negMult, posMult, includeZero = false, returnDefault) {
+		getModifierNodes(statObject, negMult, posMult, includeZero = false) {
 			let descriptions = [];
 			let returnOriginal = false;
 			if (statObject.modifiers !== undefined) {
-				statObject.modifiers.forEach((modValue) => {
-					if (StatObject.showDescription(modValue.isNegative, negMult, posMult, includeZero))
-						descriptions.push(modValue.print(negMult, posMult));
+				statObject.modifiers.forEach(modValue => {
+					if (StatObject.showDescription(modValue.isNegative, negMult, posMult, includeZero)) {
+						let description = modValue.print(negMult, posMult);
+						if (description !== undefined)
+							descriptions.push(description);
+					}
 				});
 			}
 			if (statObject.combatEffects !== undefined) {
-				statObject.combatEffects.forEach((applicator) => {
-					if (StatObject.showDescription(applicator.isNegative, negMult, posMult, includeZero))
-						descriptions.push(applicator.getDescription(negMult, posMult));
+				statObject.combatEffects.forEach(applicator => {
+					if (StatObject.showDescription(applicator.isNegative, negMult, posMult, includeZero)) {
+						let description = applicator.getDescription(negMult, posMult);
+						if (description !== undefined)
+							descriptions.push(description);
+					}
 				});
 			}
 			if (statObject.playerModifiers !== undefined) {
-				statObject.playerModifiers.forEach((modValue) => {
-					if (StatObject.showDescription(!modValue.isNegative, negMult, posMult, includeZero))
-						descriptions.push(modValue.print(posMult, negMult));
+				statObject.playerModifiers.forEach(modValue => {
+					if (StatObject.showDescription(!modValue.isNegative, negMult, posMult, includeZero)) {
+						let description = modValue.print(posMult, negMult);
+						if (description !== undefined)
+							descriptions.push(description);
+					}
 				});
 			}
 			if (statObject.enemyModifiers !== undefined) {
-				statObject.enemyModifiers.forEach((modValue) => {
-					if (StatObject.showDescription(!modValue.isNegative, negMult, posMult, includeZero))
-						descriptions.push(modValue.printEnemy(posMult, negMult, 2, true));
+				statObject.enemyModifiers.forEach(modValue => {
+					if (StatObject.showDescription(!modValue.isNegative, negMult, posMult, includeZero)) {
+						let description = modValue.printEnemy(posMult, negMult, 2, true);
+						if (description !== undefined)
+							descriptions.push(description);
+					}
 				});
 			}
 			if (statObject.conditionalModifiers !== undefined) {
 				let prevDescriptions = [];
-				statObject.conditionalModifiers.forEach((conditional) => {
+				statObject.conditionalModifiers.forEach(conditional => {
 					if (returnOriginal)
 						return;
 					let desc = conditional.getDescription(negMult, posMult);
@@ -1937,14 +2021,17 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 					}
 				});
 			}
-			if (returnOriginal || descriptions.length <= 0)
+			if (returnOriginal || descriptions.length <= 0) {
+				if (statObject.description === undefined)
+					return [];
 				return [this.createModifierNode({ text: statObject.description, isInfo: true })];
+			}
 			return this.sortModifiers(descriptions.map(this.createModifierNode));
 		}
 		createDividerElem(parent, textClass = '') {
 			return createElement('div', { className: `border-top border-dark border-2x ${textClass}`, parent: parent });
 		}
-		createTooltip(icon, item) {
+		createTooltip(item) {
 			let addItemSynergy = true;
 			let _content = new DocumentFragment();
 			let itemName = createElement('div', { className: 'text-center font-w600 font-size-sm', parent: _content, text: item.name });
@@ -1958,7 +2045,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				let maxHitText = getLangString('SUMMON_DOES_NOT_ATTACK'),
 					items = item.summons ? [item.summons[0].product, item.summons[1].product] : [item],
 					totalDamage = 0;
-				items.forEach((item) => item.equipmentStats.forEach((statPair) => {
+				items.forEach(item => item.equipmentStats.forEach(statPair => {
 					if (statPair.key === 'summoningMaxhit')
 						totalDamage += statPair.value;
 				}));
@@ -1967,7 +2054,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 
 				container.append(createElement('h5', { className: `text-warning font-size-2sm m-1`, text: maxHitText }));
 			} else if (item instanceof PotionItem) {
-				container.append(createElement('small', { className: 'text-warning', text: templateString(getLangString('MENU_TEXT_POTION_CHARGES'), { charges: `${item.charges}` }) }));
+				container.append(createElement('small', { className: 'text-warning', text: templateString(getLangString('MENU_TEXT_POTION_CHARGES'), { charges: item.charges }) }));
 			} else if (item instanceof Pet || (item instanceof ShopPurchase && item.contains.pet !== undefined)) {
 				let acquiredBy = item.acquiredBy || (item instanceof ShopPurchase && item.contains.pet.acquiredBy);
 				if (acquiredBy !== undefined)
@@ -1979,10 +2066,11 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				this.getConstellationModifierSpans(item, modifierContainer);
 			} else {
 				let negMult = item instanceof AgilityObstacle || item instanceof AgilityPillar ? game.agility.getObstacleNegMult(item) : 1;
-				let posMult = item instanceof PointOfInterest && game.cartography.hasCarthuluPet ? 2 : 1;
+				let posMult = hasAoD && item instanceof PointOfInterest && game.cartography.hasCarthuluPet ? 2 : 1;
 				let statObject = item instanceof ShopPurchase ? item.contains.stats || (item.contains.pet && item.contains.pet.stats) : item.activeStats || item.stats || item;
-				let modifierNodes = this.getModifierNodes(statObject, negMult, posMult, false, true);
-				if (item instanceof EquipmentItem && (['max_skillcape', 'cape_of_completion', 'mastery_magnet', 'jesters_hat'].some(x => item.id.toLowerCase().includes(x)) || item.consumesChargesOn || (modifierNodes.length <= 0 || modifierNodes[0].textContent.search('text-warning') > 0))) {
+				let modifierNodes = this.getModifierNodes(statObject, negMult, posMult, false);
+				if (item instanceof EquipmentItem && (['max_skillcape', 'cape_of_completion', 'mastery_magnet', 'jesters_hat', 'rhaelyx', 'blood_ring'].some(x => item.id.toLowerCase().includes(x)) || item.consumesChargesOn || (modifierNodes.length <= 0 || modifierNodes[0].textContent.search('text-warning') > 0))) {
+					modifierContainer.classList.replace('text-success', 'text-info');
 					if (item.modifiedDescription.search('text-warning') > 0)
 						modifierContainer.innerHTML = item.modifiedDescription.slice(0, item.modifiedDescription.search('text-warning') - 13);
 					else
@@ -1998,12 +2086,19 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 					let descriptions = [];
 
 					let itemDesc = item._customDescription.slice(item._customDescription.search('text-warning') + 14, item._customDescription.length);
-					itemDesc = itemDesc.slice(0, itemDesc.indexOf(':') + 1);
 					descriptions.push(createElement('h5', { className: 'text-warning sb-font-2sm m-1', text: itemDesc }));
-
-					game.itemSynergies.get(item).forEach(synergy => { descriptions.push(...this.getModifierNodes(synergy, 1, 1, false)) });
-
-					descriptions.forEach(node => { modifierContainer.append(node); });
+					game.itemSynergies.get(item).forEach(synergy => {
+						this.getModifierNodes(synergy, 1, 1, false).forEach(node => {
+							if (node && node.textContent !== '')
+								descriptions.push(node);
+						});
+					});
+					if (descriptions.length > 1) {
+						itemDesc = itemDesc.slice(0, itemDesc.indexOf(':') + 1);
+						descriptions[0].textContent = itemDesc;
+						descriptions.forEach(node => modifierContainer.append(node));
+					} else
+						modifierContainer.append(descriptions[0]);
 				} else {
 					modifierContainer.append(createElement('h5', { className: 'text-warning sb-font-2sm m-1', text: item._customDescription }));
 				}
@@ -2049,7 +2144,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 							let plot = game.farming.categoryPlotMap.get(category).find(x => x.state === 2);
 							let interval = plot !== undefined ? plot.growthTime : 0;
 							if (i !== 0) chanceElem.textContent += ' |';
-							chanceElem.textContent += ` 1/${numberWithCommas(Math.floor(100 / (interval * baseChance)))}`
+							chanceElem.textContent += ` 1/${numberWithCommas(Math.floor(100 / (interval * baseChance)))}`;
 						});
 					}
 				} else if (item.id === 'melvorD:Ty') {
@@ -2064,6 +2159,8 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				} else if (hasDrop !== undefined) {
 					let weight = hasDrop.fixedPetClears || hasDrop.pet.weight === 1 ? hasDrop.pet.weight : `1/${formatNumber(hasDrop.pet.weight)}`;
 					chanceElem.textContent += ` ${weight}`;
+					if (hasDrop instanceof Stronghold)
+						chanceElem.textContent += ` ${getLang('SUPERIOR_ONLY')}`;
 				} else if (skill !== undefined) {
 					if ((skill.isCombat && !game.combat.activeSkills.includes(skill)) || (!skill.isCombat && !skill.isActive))
 						chanceElem.textContent += ` ${getLang('NOT_ACTIVE').replace('${skillName}', item.skill.name)}`;
@@ -2111,7 +2208,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 				if (result.value) {
 					let agiSetting = this.data.filteredItems.get('agi');
 					characterStorage.removeItem('saveData');
-					this.getAllIcons().filter(x => x.isFiltered).forEach((icon) => {
+					this.getAllIcons().filter(x => x.isFiltered).forEach(icon => {
 						icon.isFiltered = false;
 						icon.show();
 						if (icon.skill === this.selectedSkill)
@@ -2136,7 +2233,7 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			tempSkills.push(data.skill);
 			let realms = hasItA ? [melvorRealm.id, abyssalRealm.id] : [melvorRealm.id];
 			this.data.skillRealms.set(data.skill.id, data.realmIDs || realms);
-			this.data.headers.set(data.skill.id, data.header || data.skill.header);
+			this.data.headers.set(data.skill.id, data.header);
 			sortModdedSkill(data);
 		}
 		addNewModifiers(data) {
@@ -2147,34 +2244,47 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 			this.data.moddedModifiers.push(data);
 		}
 		updateAllPOIs() {
-			this.getCategoryIcons('POI').forEach((poi) => { this.renderQueue.poi.cost.add(poi), this.renderQueue.poi.bg.add(poi); });
+			this.getCategoryIcons('POI').forEach(poi => { this.renderQueue.poi.cost.add(poi), this.renderQueue.poi.bg.add(poi); });
 		}
 		updateAllObstacles() {
-			this.getCategoryIcons('Obstacle').forEach((obstacle) => { this.renderQueue.obstacle.bg.add(obstacle); });
+			this.getCategoryIcons('Obstacle').forEach(obstacle => this.renderQueue.obstacle.bg.add(obstacle));
 		}
 		updateAllQuantities() {
-			this.getCategoryIcons('Consumable').forEach((consumable) => { this.renderQueue.consumable.bg.add(consumable), this.renderQueue.consumable.qty.add(consumable); });
-			this.getCategoryIcons('Synergy').forEach((synergy) => { this.renderQueue.synergy.bg.add(synergy), this.renderQueue.synergy.qty.add(synergy); });
+			this.getCategoryIcons('Consumable').forEach(consumable => { this.renderQueue.consumable.bg.add(consumable), this.renderQueue.consumable.qty.add(consumable); });
+			this.getCategoryIcons('Synergy').forEach(synergy => { this.renderQueue.synergy.bg.add(synergy), this.renderQueue.synergy.qty.add(synergy); });
 		}
 		togglePresetButtons(val) {
-			this.data.menus.forEach((menu) => {
+			this.data.menus.forEach(menu => {
 				val ? this.showElement(menu.presetsBtn) : this.hideElement(menu.presetsBtn);
 			});
 		}
 		reInitSB() {
 			this.getAllIcons().forEach(icon => icon.destroy());
-			this.data.menus.forEach((menu) => {
-				menu.container.querySelectorAll('#SB-Info').forEach(tooltip => tooltip._tippy.destroy());
+			this.data.menus.forEach(menu => {
+				menu.container.querySelectorAll('#SB-Info').forEach(tooltip => tooltip?._tippy?.destroy());
 				menu.remove();
 			});
 			this.data.skills = [];
-			this.data.icons = new Map();
-			this.data.filteredItems = new Map();
+			this.data.icons.clear();
+			this.data.filteredItems.clear();
 			this.data.agiSelectArr = [];
 			let t0 = performance.now();
 			this.initSB();
+			this.data.menus.forEach(menu => {
+				MainTooltipController.initAll(menu.container);
+				AltTooltipController.initAll(menu.container);
+			});
+			this.getAllIcons().forEach(addToImageLoader);
+			if (game.openPage.skills !== undefined) {
+				this.menu = this.data.menus.get(this.skillPage);
+				this.menu.updateSelectedRealm(game.openPage.skills[0].currentRealm.id);
+				this.updateMenu(this.skillPage);
+				this.setClassByLength(this.menu);
+			}
 			let t1 = performance.now();
 			console.log(`%c[Skill Boosts]: Loading took ${t1 - t0}ms`, 'color: #ccaffc');
+			if (debugEnabled)
+				this.menu.toggleAllDebugBtns();
 		}
 	};
 
@@ -2214,6 +2324,11 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		label: getLang('SETTING_ASTRO_SPOILERS'),
 		default: true
 	}, {
+		type: 'switch',
+		name: 'instaBuildObstacle',
+		label: getLang('SETTING_INSTA_BUILD'),
+		default: false
+	}, {
 		type: 'custom',
 		name: 'hideRedBgs',
 		label: getLang('SETTING_HIDE_REDBGS'),
@@ -2244,12 +2359,12 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		get(root) {
 			const checkboxes = root.querySelectorAll('input[type="checkbox"]');
 			const value = [];
-			checkboxes.forEach((c) => c.checked && value.push(elementValueMap.get(c)));
+			checkboxes.forEach(c => c.checked && value.push(elementValueMap.get(c)));
 			return value;
 		},
 		set(root, data) {
 			const checkboxes = root.querySelectorAll('input[type="checkbox"]');
-			checkboxes.forEach((c) => data && data.includes(elementValueMap.get(c)) && (c.checked = true));
+			checkboxes.forEach(c => data && data.includes(elementValueMap.get(c)) && (c.checked = true));
 		}
 	}, {
 		type: 'text',
@@ -2356,18 +2471,41 @@ export async function setup({ settings, loadModule, loadTemplates, onModsLoaded,
 		}
 	});
 
+	function addToImageLoader(icon) {
+		if (icon instanceof SkillBoostsIcon)
+			ImageLoader.register(icon.image, icon.item.media);
+		else {
+			ImageLoader.register(icon.summon1Image, icon.item.summons[0].media);
+			ImageLoader.register(icon.summon2Image, icon.item.summons[1].media);
+		}
+	}
+
 	onInterfaceReady(() => {
 		const t0 = performance.now();
+		try {
+			SBSave.initAndLoad();
+			skillBoosts.initSB();
+			document.body.append(createElement('sb-tooltip'), createElement('sb-tooltip'));
+			skillBoosts.data.menus.forEach(menu => {
+				MainTooltipController.initAll(menu.container);
+				AltTooltipController.initAll(menu.container);
+			});
+			agiCostSetting.init();
+			customColorSetting.load();
+			skillBoosts.addLevelChangeEmitters();
+		} catch (e) {
+			console.error(`[Skill Boosts]: ${e}`);
+		}
 
-		SBSave.initAndLoad();
-		skillBoosts.initSB();
-		agiCostSetting.init();
-		customColorSetting.load();
+		document.addEventListener('click', () => AltTooltipController.hide());
 		document.querySelector("#combat-area-category-menu > div").classList.remove('push');
 		window.addEventListener("resize", skillBoosts.resizeMenu.bind(skillBoosts));
 
-		if (game.openPage.skills !== undefined)
+		if (game.openPage.skills !== undefined) {
 			skillBoosts.onSkillChange(true);
+			skillBoosts.getAllIcons(game.openPage.skills[0]).forEach(addToImageLoader);
+		} else
+			skillBoosts.getAllIcons().forEach(addToImageLoader);
 
 		const t1 = performance.now();
 		console.log(`%c[Skill Boosts]: Loading took ${t1 - t0}ms`, 'color: #ccaffc');
