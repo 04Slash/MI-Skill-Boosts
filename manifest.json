@@ -1,7 +1,9 @@
 {
-	"name": "Skill Boosts",
-	"namespace": "Skill_Boosts",
-	"setup": "main.mjs",
-	"version": "3.1.0",
-	"load": ["style.css"]
+    "name": "Skill Boosts",
+    "namespace": "Skill_Boosts",
+    "setup": "main.mjs",
+    "version": "3.1.13",
+    "load": [
+        "style.css"
+    ]
 }

@@ -16,7 +16,7 @@ const { patch, settings, onModsLoaded } = mod.getContext(
 
 let oldEquipmentSet = player.selectedEquipmentSet,
 	destroyedObstacles = [],
-	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, previousSynergy, prevMarkLevel, sideBarClicked;
+	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, isRendering, previousSynergy, prevMarkLevel, sideBarClicked;
 
 
 // Equipment Events
@@ -27,6 +27,7 @@ player._events.on('itemEquipped', e => {
 	else if (getCategoryIcons('Consumable').includes(e.item)) {
 		addToRenderQueue(e.item, 'consumable', ['bg', 'qty']);
 	}
+
 	if (previousSynergy && previousSynergy.summons.some(x => x.product === e.item)) {
 		addToRenderQueue(previousSynergy, 'synergy', ['bg', 'qty']);
 		previousSynergy = undefined;
@@ -35,6 +36,10 @@ player._events.on('itemEquipped', e => {
 	if (newSynergy && newSynergy.summons.some(x => x.product === e.item)) {
 		addToRenderQueue(newSynergy, 'synergy', ['bg', 'qty']);
 	}
+
+	if (get('autoSwapRealms') && e.item instanceof WeaponItem)
+		swapCombatRealm(e.item);
+
 	if (skillBoosts.hasAgilityCostMod(e.item))
 		skillBoosts.updateAllObstacles();
 	if (skillBoosts.hasTravelCostMod(e.item))
@@ -59,44 +64,30 @@ if (hasAoD) {
 	game.cartography.on('poiDiscovered', e => {
 		if (getCategoryIcons('POI').includes(e.poi))
 			addToRenderQueue(e.poi, 'poi', ['bg']);
-		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements[0] && x.purchaseRequirements[0].pois && x.purchaseRequirements[0].pois[0] === e.poi).forEach((purchase) => {
+		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.pois && y.pois.some(z => z === e.poi))).forEach(purchase => {
 			addToRenderQueue(purchase, 'purchase', ['bg']);
 		});
 	});
 }
 
-// Purchase Events
-// Remove Purchase from list after buying
-// game.shop._events.on('purchaseMade', e => {
-// 	getCategoryIcons('Purchase').filter(x => x.unlockRequirements.some(x => x.purchase === e.purchase)).forEach((purchase) => {
-// 		updateBg(purchase, 'purchase');
-// 	});
-// 	skillBoosts.renderPurchaseBg();
-// 	if (getCategoryIcons('Purchase').includes(e.purchase))
-// 		skillBoosts.removeIcon(e.purchase);
-// 	if (e.purchase.contains.pet && getCategoryIcons('Pet').includes(e.purchase.contains.pet))
-// 		skillBoosts.removeIcon(e.purchase.contains.pet);
-// });
-
-
 // Misc Events
 // Update Shop Requirements on Dungeon Completion
 game.combat._events.on('dungeonCompleted', e => {
-	getCategoryIcons('Purchase').filter(x => x.unlockRequirements.some(x => x.dungeon === e.dungeon)).forEach((purchase) => {
+	getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(x => x.dungeon === e.dungeon)).forEach(purchase => {
 		addToRenderQueue(purchase, 'purchase', ['bg']);
 	});
 });
 
 // Update Shop Requirements on Abyss Completion
 game.combat._events.on('abyssDepthCompleted', e => {
-	getCategoryIcons('Purchase').filter(x => x.unlockRequirements.some(x => x.dungeon === e.dungeon)).forEach((purchase) => {
+	getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(x => x.depth === e.depth)).forEach(purchase => {
 		addToRenderQueue(purchase, 'purchase', ['bg']);
 	});
 });
 
 // Update after building a Building
 game.township.on('buildingCountChanged', e => {
-	getCategoryIcons('Purchase').filter(x => x.contains.pet && x.purchaseRequirements.some(y => y.building === e.building)).forEach((purchase) => {
+	getCategoryIcons('Purchase').filter(x => x.contains.pet && x.purchaseRequirements.some(y => y.building === e.building)).forEach(purchase => {
 		addToRenderQueue(purchase, 'purchase', ['bg']);
 	});
 });
@@ -104,7 +95,7 @@ game.township.on('buildingCountChanged', e => {
 // Update Purchases with Museum Donation requirements
 if (hasAoD) {
 	game.archaeology.on('itemDonated', e => {
-		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.count === e.newCount)).forEach((purchase) => {
+		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.count === e.newCount)).forEach(purchase => {
 			addToRenderQueue(purchase, 'purchase', ['bg']);
 		});
 	});
@@ -113,10 +104,10 @@ if (hasAoD) {
 
 
 // Update items with Level Requirements
-[game.woodcutting, game.fishing, game.firemaking, game.cooking, game.mining, game.smithing, game.agility, game.cartography, game.archaeology].forEach((skill) => {
+[game.woodcutting, game.fishing, game.firemaking, game.cooking, game.mining, game.smithing, game.agility, game.cartography, game.archaeology].forEach(skill => {
 	if (skill === undefined) return;
 	skill.on('levelChanged', e => {
-		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.skill === e.skill && e.oldLevel < y.level && e.newLevel >= y.level)).forEach((purchase) => {
+		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.skill === e.skill && e.oldLevel < y.level && e.newLevel >= y.level)).forEach(purchase => {
 			addToRenderQueue(purchase, 'purchase', ['bg']);
 		});
 	});
@@ -124,37 +115,36 @@ if (hasAoD) {
 [game.slayer, game.woodcutting, game.fishing, game.harvesting].forEach((skill) => {
 	if (skill === undefined) return;
 	skill.on('abyssalLevelChanged', e => {
-		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.skill === e.skill && e.oldLevel < y.abyssalLevel && e.newLevel >= y.abyssalLevel)).forEach((purchase) => {
+		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.skill === e.skill && e.oldLevel < y.abyssalLevel && e.newLevel >= y.abyssalLevel)).forEach(purchase => {
 			addToRenderQueue(purchase, 'purchase', ['bg']);
 		});
 	});
 });
 
-function addLevelChangeEmitters() {
+export function addLevelChangeEmitters() {
 	skillBoosts.data.skills.forEach((skill) => {
-	['levelChanged', 'abyssalLevelChanged'].forEach(levelChange => {
-			let level = levelChange === 'levelChanged' ? 'Level' : 'AbyssalLevel';
-			let lcLevel = levelChange === 'levelChanged' ? 'level' : 'abyssalLevel';
-			if (skill === game.agility && skill[level] < skill[`max${level}Cap`]) {
-				skill.on(levelChange, e => {
-					getCategoryIcons('Obstacle').filter(x => x.slot[lcLevel] === e.newlevel).forEach(obstacle => addToRenderQueue(obstacle, 'obstacle', ['bg']));
+		['level', 'abyssalLevel'].forEach(lvl => {
+			let ucLvl = lvl.charAt(0).toUpperCase() + lvl.slice(1);
+
+			if (skill === game.agility && skill[ucLvl] < skill[`max${ucLvl}Cap`]) {
+				skill.on(`${lvl}Changed`, e => {
+					getCategoryIcons('Obstacle').filter(x => x.slot[lvl] === e.newlevel).forEach(obstacle => addToRenderQueue(obstacle, 'obstacle', ['bg']));
 				});
-			} else if (skill[lcLevel] < skill[`max${level}Cap`]) {
-				skill.on(levelChange, e => {
-					getCategoryIcons('Obstacle').filter(x => x.skillRequirements && x.skillRequirements.some(y => y.skill === e.skill && e.oldLevel < y[lcLevel] && e.newLevel >= y[lcLevel])).forEach(obstacle => {
+			} else if (skill[lvl] < skill[`max${ucLvl}Cap`]) {
+				skill.on(`${lvl}Changed`, e => {
+					getCategoryIcons('Obstacle').filter(x => x.skillRequirements && x.skillRequirements.some(y => y.skill === e.skill && e.oldLevel < y[lvl] && e.newLevel >= y[lvl])).forEach(obstacle => {
 						addToRenderQueue(obstacle, 'obstacle', ['bg']);
 					});
 				});
 			}
-			if (skill === game.astrology && skill[lcLevel] < skill[`max${level}Cap`]) {
-				skill.on(levelChange, e => {
-					getCategoryIcons('Constellation').filter(x => x[lcLevel] === e.newLevel).forEach((constellation) => { addToRenderQueue(constellation, 'constellation', ['bg']); });
+			if (skill === game.astrology && skill[lvl] < skill[`max${ucLvl}Cap`]) {
+				skill.on(`${lvl}Changed`, e => {
+					getCategoryIcons('Constellation').filter(x => x[lvl] === e.newLevel).forEach(constellation => { addToRenderQueue(constellation, 'constellation', ['bg']); });
 				});
 			}
 		});
 	});
 }
-onModsLoaded(() => { skillBoosts.addLevelChangeEmitters = addLevelChangeEmitters });
 
 
 // Class Patches
@@ -168,12 +158,12 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 		return;
 	try {
 		let setsToUpdate = Array.from(new Set([oldEquipmentSet, setID]));
-		setsToUpdate.forEach((set) => {
+		setsToUpdate.forEach(set => {
 			let eSet = player.equipmentSets[set];
 			if (!eSet)
 				return;
 			let synergy = getSynergy(eSet.equipment);
-			eSet.equipment.equippedArray.forEach((slot) => {
+			eSet.equipment.equippedArray.forEach(slot => {
 				if (slot.isEmpty)
 					return;
 				if (['melvorD:Consumable', 'melvorD:Summon1', 'melvorD:Summon2'].includes(slot.id))
@@ -183,6 +173,9 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 
 				if (synergy && synergy.summons.some(x => x.product === slot.item))
 					addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
+
+				if (get('autoSwapRealms') && slot.item instanceof WeaponItem)
+					swapCombatRealm(slot.item);
 			});
 		});
 		skillBoosts.render();
@@ -204,10 +197,15 @@ patch(Equipment, 'unequipItem').after(function(_, slot) {
 		else if (getCategoryIcons('Consumable').includes(unequippedItem)) {
 			addToRenderQueue(unequippedItem, 'consumable', ['bg', 'qty']);
 		}
+
 		if (previousSynergy) {
 			addToRenderQueue(previousSynergy, 'synergy', ['bg', 'qty']);
 			previousSynergy = undefined;
 		}
+
+		if (get('autoSwapRealms') && unequippedItem instanceof WeaponItem)
+			swapCombatRealm();
+
 		if (skillBoosts.hasTravelCostMod(unequippedItem))
 			skillBoosts.updateAllPOIs();
 	} catch (e) {
@@ -248,7 +246,7 @@ patch(PotionManager, 'usePotion').replace(function(o, potion, loadPotions) {
 	}
 });
 patch(PotionManager, 'removePotion').after(function(o, skill, loadPotions) {
-	getCategoryIcons('Consumable').filter(potion => potion instanceof PotionItem && potion.action === skill).forEach((potion) => {
+	getCategoryIcons('Consumable').filter(potion => potion instanceof PotionItem && potion.action === skill).forEach(potion => {
 		addToRenderQueue(potion, 'consumable', ['bg', 'qty']);
 	});
 });
@@ -268,7 +266,7 @@ patch(Agility, 'addSingleObstacleBuildCost').after(function(_, obstacle, costs) 
 			return;
 		skillBoosts.agiCosts = false;
 
-		let agiSetting = skillBoosts.data.filteredItems.get('agi');
+		let agiSetting = skillBoosts.data.saveData.get('Skill_Boosts:Settings');
 		if (agiSetting.length === 0 || obstacle.realm !== melvorRealm)
 			return;
 
@@ -304,7 +302,7 @@ patch(Agility, 'addSinglePillarBuildCost').after(function(_, pillar, costs) {
 			return;
 		skillBoosts.agiCosts = false;
 
-		let agiSetting = skillBoosts.data.filteredItems.get('agi');
+		let agiSetting = skillBoosts.data.saveData.get('Skill_Boosts:Settings');
 		if (agiSetting.length === 0 || pillar.realm !== melvorRealm)
 			return;
 
@@ -331,9 +329,9 @@ patch(Agility, 'buildObstacle').after(function(_, obstacle) {
 	try {
 		let obstacles = getCategoryIcons('Obstacle');
 		if (obstacle.id === 'melvorTotH:ForestJog')
-			return obstacles.forEach((obstacle) => { addToRenderQueue(obstacle, 'obstacle', ['bg']); });
-		obstacles.filter(x => x.category === obstacle.category).forEach((obst) => { addToRenderQueue(obst, 'obstacle', ['bg']); });
-		obstacles.filter(x => x instanceof AgilityPillar || x.category >= obstacle.category).forEach((obst) => { addToRenderQueue(obst, 'obstacle', ['active']); });
+			return obstacles.forEach(obstacle => addToRenderQueue(obstacle, 'obstacle', ['bg']));
+		obstacles.filter(x => x.category === obstacle.category).forEach(obst => addToRenderQueue(obst, 'obstacle', ['bg']));
+		obstacles.filter(x => x instanceof AgilityPillar || x.category >= obstacle.category).forEach(obst => addToRenderQueue(obst, 'obstacle', ['active']));
 	} catch (e) {
 		console.error(`[Skill Boosts]: ${e}`);
 	}
@@ -355,9 +353,9 @@ patch(Agility, 'destroyObstacle').after(function(_, category) {
 			return;
 		let obstacles = getCategoryIcons('Obstacle');
 		if (destroyedObstacles.some(x => x.id === 'melvorTotH:ForestJog'))
-			return obstacles.forEach((obstacle) => { addToRenderQueue(obstacle, 'obstacle', ['bg']); });
-		destroyedObstacles.forEach((destroy) => { addToRenderQueue(destroy, 'obstacle', ['bg']); });
-		obstacles.filter(x => x instanceof AgilityPillar || x.category >= category).forEach((obst) => { addToRenderQueue(obst, 'obstacle', ['active']); });
+			return obstacles.forEach(obstacle => addToRenderQueue(obstacle, 'obstacle', ['bg']));
+		destroyedObstacles.forEach(destroy => addToRenderQueue(destroy, 'obstacle', ['bg']));
+		obstacles.filter(x => x instanceof AgilityPillar || x.category >= category).forEach(obst => addToRenderQueue(obst, 'obstacle', ['active']));
 		destroyedObstacles = [];
 	} catch (e) {
 		console.error(`[Skill Boosts]: ${e}`);
@@ -377,7 +375,7 @@ patch(Agility, 'buildPillar').after(function(_, pillar) {
 		addToRenderQueue(pillar, 'obstacle', ['bg', 'active']);
 		if (destroyedObstacles.length <= 0)
 			return;
-		destroyedObstacles.forEach((obstacle) => { addToRenderQueue(obstacle, 'obstacle', ['bg', 'active']); });
+		destroyedObstacles.forEach(obstacle => addToRenderQueue(obstacle, 'obstacle', ['bg', 'active']));
 		destroyedObstacles = [];
 	} catch (e) {
 		console.error(`[Skill Boosts]: ${e}`);
@@ -397,7 +395,7 @@ patch(Agility, 'destroyPillar').after(function(_, category) {
 	try {
 		if (destroyedObstacles.length <= 0)
 			return;
-		destroyedObstacles.forEach((destroy) => { addToRenderQueue(destroy, 'obstacle', ['bg', 'active']); });
+		destroyedObstacles.forEach(destroy => addToRenderQueue(destroy, 'obstacle', ['bg', 'active']));
 		destroyedObstacles = [];
 	} catch (e) {
 		console.error(`[Skill Boosts]: ${e}`);
@@ -414,20 +412,18 @@ patch(PetManager, 'unlockPet').before(function(pet) {
 patch(PetManager, 'unlockPet').after(function(_, pet) {
 	if (isPetUnlocked)
 		return;
-	if (getCategoryIcons('Pet').includes(pet))
-		skillBoosts.removeIcon(pet);
+	skillBoosts.removeIcon(pet);
 });
 
 
 patch(ShopMenu, 'updateItemPostPurchase').after(function(_, purchase) {
 	try {
-		let purchases = getCategoryIcons('Purchase');
-		purchases.filter(x => x.unlockRequirements.some(x => x.purchase === purchase)).forEach((purchase) => {
-			addToRenderQueue(purchase, 'purchase', ['bg']);
-		});
+		skillBoosts.removeIcon(purchase);
+		let nextUpgrade = game.shop.purchases.allObjects.find(x => x.unlockRequirements.some(y => y.purchase === purchase));
+		if (nextUpgrade)
+			addToRenderQueue(nextUpgrade, 'purchase', ['bg']);
+
 		skillBoosts.renderPurchaseBg();
-		if (purchases.includes(purchase))
-			skillBoosts.removeIcon(purchase);
 	} catch (e) {
 		console.error(`[Skill Boosts]: ${e}`);
 	}
@@ -473,7 +469,7 @@ patch(Summoning, 'locateAncientRelic').after(function(_, relicSet, relic) {
 // Remove all negative obstacles after Agility Master Relic
 patch(Agility, 'locateAncientRelic').after(function(_, relicSet, relic) {
 	if (relicSet.isComplete) {
-		skillBoosts.getAllIcons().filter(x => x.category === 'Obstacle' && x.elem === 3).forEach((icon) => skillBoosts.removeIcon(icon.item, icon.elem));
+		skillBoosts.getAllIcons().filter(x => x.category === 'Obstacle' && x.elem === 3).forEach(icon => skillBoosts.removeIcon(icon.item, icon.elem));
 		skillBoosts.setClassByLength();
 	}
 });
@@ -513,6 +509,9 @@ patch(Cooking, 'onRecipeSelectionOpenClick').after(function(o, category, realm) 
 });
 // Swap Realms for Farming
 patch(FarmingSeedSelectElement, 'setSeedSelection').after(function(o, category, game, realm, plot) {
+	const realmsWithMasteryInCategory = game.farming.getRealmsWithMasteryInCategory(category);
+	if (realmsWithMasteryInCategory.length > 0 && !realmsWithMasteryInCategory.includes(realm))
+		realm = realmsWithMasteryInCategory[0];
 	skillBoosts.onRealmChange(realm.id);
 });
 
@@ -545,23 +544,23 @@ function addToQueue(queue, obj, quantity = 1) {
 }
 
 function updateCurrency() {
-	if (!game.loopStarted || skillBoosts.renderQueue.currency.size === 0)
+	if (skillBoosts.renderQueue.currency.size === 0)
 		return;
 	skillBoosts.renderQueue.currency.forEach((qty, currency) => {
-		getCategoryIcons('Obstacle').forEach((obstacle) => {
+		getCategoryIcons('Obstacle').forEach(obstacle => {
 			let costs = skillBoosts.getObstacleCost(obstacle, true)._currencies.get(currency);
 			if (!costs) return;
 			if (currency.amount >= costs - qty && currency.amount <= costs + qty)
 				addToRenderQueue(obstacle, 'obstacle', ['bg']);
 		});
-		getCategoryIcons('Purchase').forEach((purchase) => {
+		getCategoryIcons('Purchase').forEach(purchase => {
 			let costs = purchase.costs.currencies.find(x => x.currency === currency);
 			if (!costs) return;
 			if (currency.amount >= costs.cost - qty && currency.amount <= costs.cost + qty) {
 				addToRenderQueue(purchase, 'purchase', ['bg']);
 			}
 		});
-		getCategoryIcons('POI').forEach((poi) => {
+		getCategoryIcons('POI').forEach(poi => {
 			let costs = skillBoosts.getTravelCosts(poi)._currencies.get(currency);
 			if (!costs) return;
 			if (currency.amount >= costs - qty && currency.amount <= costs + qty)
@@ -572,7 +571,7 @@ function updateCurrency() {
 }
 
 function updateItem() {
-	if (!game.loopStarted || skillBoosts.renderQueue.items.size === 0)
+	if (skillBoosts.renderQueue.items.size === 0)
 		return;
 	let newSynergy = player.equippedSummoningSynergy;
 	skillBoosts.renderQueue.items.forEach((qty, item) => {
@@ -586,13 +585,13 @@ function updateItem() {
 		}
 
 		let bankQty = game.bank.getQty(item);
-		getCategoryIcons('Obstacle').filter(y => y.itemCosts.some(x => x.item === item)).forEach((obstacle) => {
+		getCategoryIcons('Obstacle').filter(y => y.itemCosts.some(x => x.item === item)).forEach(obstacle => {
 			skillBoosts.getObstacleCost(obstacle, true)._items.forEach(quantity => {
 				if (bankQty >= quantity - qty && bankQty <= quantity + qty)
 					addToRenderQueue(obstacle, 'obstacle', ['bg']);
 			});
 		});
-		getCategoryIcons('Purchase').filter(y => y.costs.items.some(x => x.item === item)).forEach((purchase) => {
+		getCategoryIcons('Purchase').filter(y => y.costs.items.some(x => x.item === item)).forEach(purchase => {
 			purchase.costs.items.forEach(({ quantity }) => {
 				if (bankQty >= quantity - qty && bankQty <= quantity + qty) {
 					addToRenderQueue(purchase, 'purchase', ['bg']);
@@ -603,10 +602,33 @@ function updateItem() {
 	skillBoosts.renderQueue.items.clear();
 }
 
+function swapCombatRealm(item) {
+	let skillID = game.attack.id,
+		menu = skillBoosts.data.menus.get(skillID),
+		icons = skillBoosts.getSkillIcons(false, false, false, skillID),
+		realmID = (!item || item.damageType === game.normalDamage) ? melvorRealm.id : abyssalRealm.id;
+
+	skillBoosts.onRealmChange(realmID, icons, menu, skillID);
+}
+
 function lazyRender() {
 	updateCurrency();
 	updateItem();
 	skillBoosts.renderMenu();
+}
+
+export function startRenderer() {
+	if (isRendering)
+		return;
+	lazyRenderer = window.setInterval(lazyRender, 2000);
+	fastRenderer = window.setInterval(skillBoosts.render.bind(skillBoosts), 500);
+	isRendering = true;
+}
+
+function clearRenderer() {
+	clearInterval(lazyRenderer);
+	clearInterval(fastRenderer);
+	isRendering = false;
 }
 
 // Misc Patching
@@ -630,16 +652,10 @@ patch(Tutorial, 'completeTutorial').after(function(o) {
 	skillBoosts.onSkillChange(true);
 });
 // Introduce custom loops for renderQueue
-game._events.on('offlineLoopExited', e => {
-	lazyRenderer = window.setInterval(lazyRender, 2000);
-	fastRenderer = window.setInterval(skillBoosts.render.bind(skillBoosts), 500);
-});
-game._events.on('offlineLoopEntered', e => {
-	clearInterval(lazyRenderer);
-	clearInterval(fastRenderer);
-});
+game._events.on('offlineLoopExited', e => startRenderer());
+game._events.on('offlineLoopEntered', e => clearRenderer());
 patch(AgilityPillar, 'media').get(function(o) { return this._media; });
-//Fix for black Cartography Map bug
+// Fix for black Cartography Map bug
 patch(WorldMapDisplayElement, 'setViewportSize').replace(function() {
 	if (this.offsetParent === null)
 		return;

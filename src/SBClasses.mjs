@@ -1,10 +1,12 @@
-const { getResourceUrl, settings, characterStorage } = mod.getContext(
+const { getResourceUrl, settings, characterStorage, patch } = mod.getContext(
 		import.meta),
 	generalSettings = settings.section('General'),
 	get = generalSettings.get,
 	player = game.combat.player,
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 	inactiveIcon = getResourceUrl('assets/inactive.png');
+
+let dataDecoded = false;
 
 // A modified version of Melvor's InfoIcon
 class SkillBoostsIconElement extends HTMLElement {
@@ -132,10 +134,12 @@ class SBAgilitySelect extends HTMLElement {
 		this._content = new DocumentFragment();
 		this._content.append(getTemplateNode('SkillBoosts-Agility-Selection'));
 		const getElem = (id) => getAnyElementFromFragment(this._content, id);
+		this.builtContainer = getElem('SB-Built-Container');
 		this.builtName = getElem('SB-Built-Name');
 		this.builtCosts = getElem('SB-Built-Cost');
 		this.requirements = getElem('SB-Built-Requirements');
 		this.builtPassives = getElem('SB-Built-Passives');
+		this.destroyedContainer = getElem('SB-Destroy-Container');
 		this.destroyedName = getElem('SB-Destroy-Name');
 		this.destroyedCosts = getElem('SB-Destroy-Cost');
 		this.destroyedPassives = getElem('SB-Destroy-Passives');
@@ -145,13 +149,11 @@ class SBAgilitySelect extends HTMLElement {
 		this.builtName.textContent = `${getLangString('MENU_TEXT_BUILD')} ${this.built.name}?`;
 		if (this.destroyed) {
 			this.destroyedName.textContent = `${getLangString('MENU_TEXT_DESTROY')} ${this.destroyed.name}?`;
-			showElement(getElem('SB-Destroy-Container'));
+			showElement(this.destroyedContainer);
 		}
-
-		if (this.built instanceof AgilityObstacle)
-			this.setObstacles();
-		else
-			this.setPillars();
+		if (this.built === this.destroyed)
+			hideElements([this.builtContainer, this.destroyedContainer])
+		this.built instanceof AgilityObstacle ? this.setObstacles() : this.setPillars();
 
 		if (this.built.realm === melvorRealm) {
 			this.costReductionItems();
@@ -193,7 +195,7 @@ class SBAgilitySelect extends HTMLElement {
 	}
 	buildObstacle() {
 		let type = skillBoosts.getObstacleType(this.built) === 'Obstacle';
-		if (!skillBoosts.canBuildObstacle(this.built))
+		if (!skillBoosts.canBuildObstacle(this.built) || this.built === this.destroyed)
 			return;
 		type ? game.agility.buildObstacle(this.built) : game.agility.buildPillar(this.built);
 		skillBoosts.renderObstacleBg();
@@ -226,10 +228,13 @@ class SBAgilitySelect extends HTMLElement {
 	}
 	updateBuildButton() {
 		let buildBtn = SwalLocale.getConfirmButton();
-		if (skillBoosts.canBuildObstacle(this.built))
+		if (skillBoosts.canBuildObstacle(this.built) && !this.built.isBuilt)
 			buildBtn.style = ``;
 		else
 			buildBtn.style = `display: none;`;
+		showElement(this.builtContainer);
+		if (this.destroyed)
+			showElement(this.destroyedContainer);
 	}
 	updateBgs() {
 		this.iconMap.forEach((item, icon) => {
@@ -324,21 +329,21 @@ class SBColorSetting extends HTMLElement {
 		return createElement('div', {
 			attributes: [['style', 'width:92px']],
 			children: [
-					createElement('div', {
+				createElement('div', {
 					children: [
-							createElement('input', {
+						createElement('input', {
 							id: 'SB-picker',
 							className: 'btn-light sb-picker',
 							attributes: [['type', 'color']]
 						}),
-							createElement('input', {
+						createElement('input', {
 							id: 'input',
 							className: 'form-control form-control-sm text-center sb-input',
 							attributes: [['type', 'text']]
 						})
-						]
+					]
 				})
-				]
+			]
 		});
 	}
 	load() {
@@ -394,7 +399,7 @@ class AgilityCostSetting extends HTMLElement {
 		this.icons.set(itemID, icon);
 	}
 	updateBgs(itemID, save) {
-		let items = skillBoosts.data.filteredItems.get('agi'),
+		let items = skillBoosts.data.saveData.get('Skill_Boosts:Settings'),
 			icons = [this.icons.get(itemID)];
 		if (icons[0] === undefined)
 			icons = this.icons;
@@ -407,26 +412,25 @@ class AgilityCostSetting extends HTMLElement {
 		if (save) {
 			items.includes(itemID) ? items.splice(items.indexOf(itemID), 1) : items.push(itemID);
 			skillBoosts.updateAllObstacles();
-			SBSave.save();
 		}
 	}
 }
 window.customElements.define('sb-agility-setting', AgilityCostSetting);
 
-// Credits to Psycast (Equipment Presents) for the following "SBSaving" system
+// Credits to Psycast (Equipment Presents) for the following "SBSaving" crc32 system
 // https://mod.io/g/melvoridle/m/psy-equipment-presets
-// crc32
 class SBSaving {
 	constructor() {
 		this.crcTable = [];
-		this.crcMap;
-		this.SAVE_VERSION = 2;
+		this.crcFrom;
+		this.oldDataMap = new Map([['0', 'Skill_Boosts:Menu_Closed'], ['1', 'Skill_Boosts:Menu_Opened'], ['agi', 'Skill_Boosts:Settings'], ['Default Sorting', 'Skill_Boosts:No_Realm'], ['mf', 'Skill_Boosts:Mass_Filter']]);
+		this.SAVE_VERSION = 3;
 	}
 	initAndLoad() {
-		this.makeCRCTable();
-		this.crcCreateMapID();
 		this.load();
-		delete this.crcMap.from;
+		delete this.crcFrom;
+		delete this.reader;
+		delete this.oldDataMap;
 	}
 	makeCRCTable() {
 		var c;
@@ -459,53 +463,42 @@ class SBSaving {
 			...game.summoning.actions.allObjects
 		];
 		if (cloudManager.hasAoDEntitlementAndIsEnabled) {
-			game.cartography.worldMaps.forEach((map) => {
-				crcStrings.push(...map.pointsOfInterest.allObjects);
-			});
+			game.cartography.worldMaps.forEach(map => crcStrings.push(...map.pointsOfInterest.allObjects));
 		};
-		let mappedIDs = crcStrings.map(item => item.id);
-		mappedIDs.push('0', '1', 'mf', 'agi');
-		game.summoning.synergies.forEach(({ summons }) => {
-			mappedIDs.push(`${summons[0].id}+${summons[1].id}`);
-		});
+		let mappedIDs = [...crcStrings.map(item => item.id), ...this.oldDataMap.keys()];
 		const items = [...new Set(mappedIDs)]; // deduplicate
-		const crcFrom = new Map(items.map(item => [this.crc32(item), item]));
-		const crcTo = new Map(items.map(item => [item, this.crc32(item)]));
+		this.crcFrom = new Map(items.map(item => [this.crc32(item), item]));
 
-		if (items.length !== crcFrom.size || items.length !== crcTo.size) {
+		if (items.length !== this.crcFrom.size) {
 			console.warn(`[Skill Boosts] CRC Array length doesn't match Map sizes, possible duplicate!`);
 		}
-		this.crcMap = {
-			from: crcFrom,
-			to: crcTo
-		};
-	};
+	}
 	readMapping(crc) {
 		if (crc === 0x0)
 			return null;
 
-		const item = this.crcMap.from.get(crc);
+		const item = this.crcFrom.get(crc);
 		if (!item) {
 			//console.warn(`[Skill Boosts] Decoded CRC had no matching item: 0x${crc.toString(16)}`);
 			return null;
 		}
 		return item;
-	};
+	}
 	load() {
 		const compressedData = characterStorage.getItem('saveData');
 		if (compressedData)
-			this.decode(compressedData, skillBoosts.data);
+			this.decode(this.reader, compressedData);
 	}
-	save() {
-		const compressedData = this.encode(skillBoosts.data);
+	save(writer) {
+		const compressedData = this.encode(writer);
 		try {
 			characterStorage.setItem('saveData', compressedData);
 		} catch (e) {
 			notifyPlayer(game.combat, `[Skill Boosts]: ${e}`, 'danger');
 		}
 	}
-	decode(saveString, data) {
-		const reader = new SaveWriter('Read', 1);
+	decode(reader, saveString) {
+		let data = skillBoosts.data.saveData;
 		try {
 			reader.setRawData(fflate.unzlibSync(fflate.strToU8(atob(saveString), true)).buffer);
 
@@ -519,87 +512,84 @@ class SBSaving {
 			if (version > this.SAVE_VERSION)
 				throw new Error('[Skill Boosts] Save version higher then script version.');
 
-			let len = reader.getUint16();
-			for (let i = 0; i < len; i++) {
-				let item = this.readMapping(reader.getUint32());
-				let lenSkill = reader.getUint16();
-				let skills = [];
-				for (let i = 0; i < lenSkill; i++) {
-					let skill = this.readMapping(reader.getUint32());
-					if (skill !== null)
-						skills.push(skill);
-				};
-				if (item !== null)
-					data.filteredItems.set(item, skills);
-			}
-			len = reader.getUint16();
-			for (let i = 0; i < len; i++) {
-				let skill = this.readMapping(reader.getUint32());
-				let state = this.readMapping(reader.getUint32());
-				if (skill !== null && state !== null)
-					data.menuStates.set(skill, state);
-			}
-			if (version >= 2) {
-				len = reader.getUint16();
+			if (version < 3) {
+				game.summoning.synergies.forEach(synergy => {
+					this.oldDataMap.set(`${synergy.summons[0].id}+${synergy.summons[1].id}`, skillBoosts.getSynergyID(synergy));
+				});
+
+				this.makeCRCTable();
+				this.crcCreateMapID();
+
+				let len = reader.getUint16();
 				for (let i = 0; i < len; i++) {
-					let skill = this.readMapping(reader.getUint32());
-					let realm = this.readMapping(reader.getUint32());
-					if (skill !== null && realm !== null)
-						data.realmStates.set(skill, realm);
+					let skillID = this.readMapping(reader.getUint32());
+					let lenItems = reader.getUint16();
+					let itemIDs = [];
+					for (let i = 0; i < lenItems; i++) {
+						let itemID = this.readMapping(reader.getUint32());
+						if (itemID !== null)
+							itemIDs.push(itemID);
+					}
+					if (this.oldDataMap.has(skillID))
+						skillID = this.oldDataMap.get(skillID);
+					if (skillID === 'Skill_Boosts:Settings')
+						data.set(skillID, itemIDs);
+					else if (skillID !== null)
+						itemIDs.forEach(itemID => skillBoosts.addValueToMap(data, itemID, skillID));
 				}
+
 				len = reader.getUint16();
 				for (let i = 0; i < len; i++) {
 					let skill = this.readMapping(reader.getUint32());
-					let lenMods = reader.getUint16();
-					let mods = [];
-					for (let i = 0; i < lenMods; i++) {
-						let modifier = this.readMapping(reader.getUint32());
-						if (modifier !== null)
-							mods.push(modifier);
+					let state = this.readMapping(reader.getUint32());
+					if (this.oldDataMap.has(state))
+						state = this.oldDataMap.get(state);
+					if (skill !== null && state !== null && skill !== 'mf')
+						skillBoosts.addValueToMap(data, skill, state);
+				}
+
+				if (version >= 2) {
+					len = reader.getUint16();
+					for (let i = 0; i < len; i++) {
+						let skill = this.readMapping(reader.getUint32());
+						let realm = this.readMapping(reader.getUint32());
+						if (this.oldDataMap.has(realm))
+							realm = this.oldDataMap.get(realm);
+						if (skill !== null && realm !== null)
+							skillBoosts.addValueToMap(data, skill, realm);
+					}
+				}
+			} else {
+				let len = reader.getUint16();
+				for (let i = 0; i < len; i++) {
+					let key = reader.getNamespacedObjectId();
+					let lenData = reader.getUint16();
+					let valueArr = [];
+					for (let i = 0; i < lenData; i++) {
+						let val = reader.getNamespacedObjectId();
+						if (val !== undefined)
+							valueArr.push(val);
 					};
-					if (skill !== null)
-						data.hiddenModifiers.set(skill, mods);
+					if (key !== undefined)
+						data.set(key, valueArr);
 				}
 			}
+			dataDecoded = true;
 		} catch (_a) {
 			console.error("[Skill Boosts] Config Reader Error", _a);
 		}
 	}
-	encode(data) {
-		const writeUint32 = (value) => writer.writeUint32(this.crcMap.to.get(value) || 0);
-		let writer = new SaveWriter('Write', 128);
+	encode(writer) {
+		let data = skillBoosts.data.saveData;
 
 		writer.writeString('PLMV');
 		writer.writeUint16(this.SAVE_VERSION);
 
-		writer.writeUint16(data.filteredItems.size);
-		data.filteredItems.forEach((skillArr, item) => {
-			writeUint32(item);
-			writer.writeUint16(skillArr.length);
-			skillArr.forEach((skill) => {
-				writeUint32(skill);
-			});
-		});
-
-		writer.writeUint16(data.menuStates.size);
-		data.menuStates.forEach((state, skill) => {
-			writeUint32(skill);
-			writeUint32(state);
-		});
-
-		writer.writeUint16(data.realmStates.size);
-		data.realmStates.forEach((realm, skill) => {
-			writeUint32(skill);
-			writeUint32(realm);
-		});
-
-		writer.writeUint16(data.hiddenModifiers.size);
-		data.hiddenModifiers.forEach((modArr, skill) => {
-			writeUint32(skill);
-			writer.writeUint16(modArr.length);
-			modArr.forEach((mod) => {
-				writeUint32(mod);
-			});
+		writer.writeUint16(data.size);
+		data.forEach((valueArr, key) => {
+			writer.writeNamespacedObject(key);
+			writer.writeUint16(valueArr.length);
+			valueArr.forEach(val => writer.writeNamespacedObject(val));
 		});
 
 		const rawSaveData = writer.getRawData();
@@ -607,6 +597,49 @@ class SBSaving {
 		const saveString = btoa(compressedData);
 		return saveString;
 	};
+}
+
+// Save System V2.0 //
+patch(Game, 'decode').after(function(_, reader, version) {
+	if (dataDecoded)
+		return;
+	let modWriter = new ExternalSaveWriter('Read', 1, reader);
+	SBSave.reader = modWriter;
+});
+patch(Game, 'encode').before(function(writer) {
+	if (!dataDecoded)
+		return;
+	let modWriter = new ExternalSaveWriter('Write', 128, writer);
+	SBSave.save(modWriter);
+});
+
+class ExternalSaveWriter extends SaveWriter {
+	constructor(mode, dataExtensionLength, externalSaveWriter) {
+		super(mode, dataExtensionLength);
+		this.externalSaveWriter = externalSaveWriter;
+	}
+	writeNamespacedObject(objectID) {
+		const [namespace, localID] = objectID.split(':');
+		let nameMap = this.externalSaveWriter.namespaceMap.get(namespace);
+		if (nameMap === undefined) {
+			nameMap = new Map();
+			this.externalSaveWriter.namespaceMap.set(namespace, nameMap);
+		}
+		let numericID = nameMap.get(localID);
+		if (numericID === undefined) {
+			numericID = this.externalSaveWriter.nextNumericID;
+			this.externalSaveWriter.nextNumericID++;
+			nameMap.set(localID, numericID);
+		}
+		this.writeUint16(numericID);
+	}
+	getNamespacedObjectId() {
+		const numericID = this.getUint16();
+		const id = this.externalSaveWriter.numericToStringIDMap.get(numericID);
+		if (id === undefined)
+			throw new Error(`[Skill Boosts]: No namespaced id exists for numeric ID: ${numericID}`);
+		return id;
+	}
 }
 
 const langString = {
@@ -641,6 +674,7 @@ const langString = {
 		'tr': 'Engel Arka Planlarını güncellerken bunlar kullanılsın mı?',
 	},
 }
+
 let SBSave = new SBSaving();
 let customColorSetting = new SBColorSetting();
 let agiCostSetting = new AgilityCostSetting();

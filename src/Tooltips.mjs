@@ -84,15 +84,14 @@ class Tooltip extends HTMLElement {
 	}
 	_initMain(element, anchor) {
 		let timeoutId;
-
-		let events = [
+		const events = [
 			['mouseover', () => this._show(element, anchor)],
 			['mouseout', () => this._hide()],
 			['focus', () => this._show(element, anchor)],
 			['blur', () => {
 				// Don't hide if the element blurs but any tooltip element is still hovered.
 				// it would hide the tooltip from another element being hovered
-				if (this.showFor && this.showFor.matches(':hover'))
+				if (this.showFor?.matches(':hover'))
 					return;
 
 				this._hide();
@@ -100,33 +99,52 @@ class Tooltip extends HTMLElement {
 			['touchstart', event => {
 				if (!nativeManager.isMobile)
 					return;
-
 				timeoutId = setTimeout(() => {
 					timeoutId = null;
 					event.preventDefault();
 					event.stopPropagation();
-					this.id === 'Main' ? this._show(element, anchor) : this._updateAltContent(element, anchor);
+					this._show(element, anchor);
 				}, 500);
 			}, { passive: false }],
 			['touchend', () => {
 				if (!nativeManager.isMobile || !timeoutId)
 					return;
-
 				clearTimeout(timeoutId);
 			}, { passive: false }],
 			['touchmove', () => {
 				if (!nativeManager.isMobile || !timeoutId)
 					return;
-
 				clearTimeout(timeoutId);
 			}, { passive: false }],
 		];
+
 		for (const [event, listener, options] of events) {
 			element.addEventListener(event, listener, options);
 		}
 	}
 	_initAlt(element, anchor) {
-		let events = [
+		let timeoutId;
+		const events = [
+			['touchstart', event => {
+				if (!nativeManager.isMobile)
+					return;
+				timeoutId = setTimeout(() => {
+					timeoutId = null;
+					event.preventDefault();
+					event.stopPropagation();
+					this._updateAltContent(element, anchor);
+				}, 500);
+			}, { passive: false }],
+			['touchend', () => {
+				if (!nativeManager.isMobile || !timeoutId)
+					return;
+				clearTimeout(timeoutId);
+			}, { passive: false }],
+			['touchmove', () => {
+				if (!nativeManager.isMobile || !timeoutId)
+					return;
+				clearTimeout(timeoutId);
+			}, { passive: false }],
 			['contextmenu', event => {
 				if (nativeManager.isMobile)
 					return;
@@ -134,6 +152,7 @@ class Tooltip extends HTMLElement {
 				this._updateAltContent(element, anchor);
 			}]
 		];
+
 		for (const [event, listener, options] of events) {
 			element.addEventListener(event, listener, options);
 		}
