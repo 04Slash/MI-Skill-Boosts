@@ -6,8 +6,6 @@ const { getResourceUrl, settings, characterStorage, patch } = mod.getContext(
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 	inactiveIcon = getResourceUrl('assets/inactive.png');
 
-let dataDecoded = false;
-
 // A modified version of Melvor's InfoIcon
 class SkillBoostsIconElement extends HTMLElement {
 	constructor(category, item) {
@@ -574,7 +572,6 @@ class SBSaving {
 						data.set(key, valueArr);
 				}
 			}
-			dataDecoded = true;
 		} catch (_a) {
 			console.error("[Skill Boosts] Config Reader Error", _a);
 		}
@@ -601,14 +598,10 @@ class SBSaving {
 
 // Save System V2.0 //
 patch(Game, 'decode').after(function(_, reader, version) {
-	if (dataDecoded)
-		return;
 	let modWriter = new ExternalSaveWriter('Read', 1, reader);
 	SBSave.reader = modWriter;
 });
 patch(Game, 'encode').before(function(writer) {
-	if (!dataDecoded)
-		return;
 	let modWriter = new ExternalSaveWriter('Write', 128, writer);
 	SBSave.save(modWriter);
 });
