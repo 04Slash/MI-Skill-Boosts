@@ -1,8 +1,8 @@
 <template id="SkillBoosts-Menu-Template">
 	<div id="SB-Menu-Container" class="bg-white mb-0 sb-menu">
 		<div class="d-flex justify-content-center flex-wrap mx-3">
-			<div id="SB-Modifier-Filter" class="py-1 d-none"></div>
-			<div id="SB-Realm-Container" class="py-1 d-flex inline-flex"></div>
+			<div class="py-1 d-none"></div>
+			<div id="SB-Realm-Container" class="py-1 d-flex"></div>
 			<div class="p-1">
 				<button id="SB-Skill-Dropdown" class="btn sb-btn btn-secondary dropdown-toggle min-4-icons" type="button" data-toggle="dropdown"></button>
 				<div id="SB-Dropdown-Skills" class="dropdown-menu max-vh-60 overflow-y-auto"></div>
@@ -43,27 +43,27 @@
 			<div id="SB-Icon-Menu" class="row justify-content-around no-gutters px-3-sb">
 				<span id="SB-Equipment-Parent" class="sb-left">
 					<div>
-						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+						<i id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
 							<div data-sbTooltipContent></div>
-						</div>
+						</i>
 						<lang-string lang-id="COMBAT_MISC_18"></lang-string>
 					</div>
 					<div id="SB-Equipment-Icons"></div>
 				</span>
 				<span id="SB-Consumable-Parent">
 					<div>
-						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+						<i id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
 							<div data-sbTooltipContent></div>
-						</div>
+						</i>
 						<lang-string lang-id="EQUIP_SLOT_Consumable"></lang-string>
 					</div>
 					<div id="SB-Consumable-Icons"></div>
 				</span>
 				<span id="SB-Positive-Parent">
 					<div>
-						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+						<i id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
 							<div data-sbTooltipContent></div>
-						</div>
+						</i>
 						<sb-lang class="text-success" sb-lang-id="POSITIVE"></sb-lang>
 					</div>
 					<div id="SB-Positive-Icons"></div>
@@ -76,9 +76,9 @@
 				</span>
 				<span id="SB-Other-Parent" class="sb-other">
 					<div>
-						<div id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
+						<i id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
 							<div data-sbTooltipContent></div>
-						</div>
+						</i>
 						<sb-lang sb-lang-id="OTHERS"></sb-lang>
 					</div>
 					<div id="SB-Other-Icons"></div>

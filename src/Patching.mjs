@@ -8,7 +8,7 @@ const { patch, settings, onModsLoaded } = mod.getContext(
 	},
 	addToRenderQueue = (item, category, types) => types.forEach((type) => skillBoosts.renderQueue[category][type].add(item)),
 	getCategoryIcons = (category) => skillBoosts.getCategoryIcons(category),
-	get = settings.section('General').get,
+	getSetting = settings.section('General').get,
 	hasAoD = cloudManager.hasAoDEntitlementAndIsEnabled,
 	hasItA = cloudManager.hasItAEntitlementAndIsEnabled,
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
@@ -16,7 +16,7 @@ const { patch, settings, onModsLoaded } = mod.getContext(
 
 let oldEquipmentSet = player.selectedEquipmentSet,
 	destroyedObstacles = [],
-	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, isRendering, previousSynergy, prevMarkLevel, sideBarClicked;
+	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, isRendering, previousSynergy, prevMarkLevel;
 
 
 // Equipment Events
@@ -37,7 +37,7 @@ player._events.on('itemEquipped', e => {
 		addToRenderQueue(newSynergy, 'synergy', ['bg', 'qty']);
 	}
 
-	if (get('autoSwapRealms') && e.item instanceof WeaponItem)
+	if (e.item instanceof WeaponItem)
 		swapCombatRealm(e.item);
 
 	if (skillBoosts.hasAgilityCostMod(e.item))
@@ -174,7 +174,7 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 				if (synergy && synergy.summons.some(x => x.product === slot.item))
 					addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
 
-				if (get('autoSwapRealms') && slot.item instanceof WeaponItem)
+				if (slot.item instanceof WeaponItem)
 					swapCombatRealm(slot.item);
 			});
 		});
@@ -203,7 +203,7 @@ patch(Equipment, 'unequipItem').after(function(_, slot) {
 			previousSynergy = undefined;
 		}
 
-		if (get('autoSwapRealms') && unequippedItem instanceof WeaponItem)
+		if (unequippedItem instanceof WeaponItem)
 			swapCombatRealm();
 
 		if (skillBoosts.hasTravelCostMod(unequippedItem))
@@ -234,7 +234,7 @@ patch(Player, 'consumeItemQuantities').after(function(_, e, equipped) {
 patch(PotionManager, 'usePotion').replace(function(o, potion, loadPotions) {
 	try {
 		let oldPotion = game.potions.activePotions.get(potion.action);
-		if (this.game !== game || Math.max(game.bank.getQty(potion) - get('allbutx'), 0) > 0)
+		if (this.game !== game || Math.max(game.bank.getQty(potion) - getSetting('allbutx'), 0) > 0)
 			o(potion, loadPotions);
 		else
 			this.removePotion(potion.action, false);
@@ -266,7 +266,7 @@ patch(Agility, 'addSingleObstacleBuildCost').after(function(_, obstacle, costs) 
 			return;
 		skillBoosts.agiCosts = false;
 
-		let agiSetting = skillBoosts.data.saveData.get('Skill_Boosts:Settings');
+		let agiSetting = skillBoosts.data.filteredItems.get('agi');
 		if (agiSetting.length === 0 || obstacle.realm !== melvorRealm)
 			return;
 
@@ -302,7 +302,7 @@ patch(Agility, 'addSinglePillarBuildCost').after(function(_, pillar, costs) {
 			return;
 		skillBoosts.agiCosts = false;
 
-		let agiSetting = skillBoosts.data.saveData.get('Skill_Boosts:Settings');
+		let agiSetting = skillBoosts.data.filteredItems.get('agi');
 		if (agiSetting.length === 0 || pillar.realm !== melvorRealm)
 			return;
 
@@ -470,50 +470,59 @@ patch(Summoning, 'locateAncientRelic').after(function(_, relicSet, relic) {
 patch(Agility, 'locateAncientRelic').after(function(_, relicSet, relic) {
 	if (relicSet.isComplete) {
 		skillBoosts.getAllIcons().filter(x => x.category === 'Obstacle' && x.elem === 3).forEach(icon => skillBoosts.removeIcon(icon.item, icon.elem));
-		skillBoosts.setClassByLength();
+		skillBoosts.reformatMenu();
 	}
+});
+patch(Skill, 'locateAncientRelic').after(function(_, relicSet, relic) {
+	skillBoosts.removeIcon(relic);
 });
 
 
 // Swap Realms for Artisan Skills
-patch(CategoryMenuOptionElement, 'setOption').replace(function(o, option, callbackFn) {
-	const onLinkClick = () => {
-		const highlight = callbackFn();
-		if (highlight !== undefined) {
-			if (highlight)
-				this.highlight();
-			else
-				this.unhighlight();
-		}
-		if (option.skill !== undefined && option.realm !== undefined)
-			skillBoosts.onRealmChange(option.realm.id);
-	};
-	this.link.onclick = onLinkClick;
-	this.image.src = option.media;
-	this.name.textContent = option.name;
+patch(CategoryMenuOptionElement, 'setOption').after(function(o, option, callbackFn) {
+	if (option.skill !== undefined && option.realm !== undefined && skillBoosts.data.realms.length >= 2 && getSetting('autoSwapRealms'))
+		skillBoosts.onRealmChange(option.realm.id);
 });
 // Swap Realms for Firemaking
 patch(Firemaking, 'selectLog').after(function(o, recipe) {
-	if (recipe.realm !== undefined)
+	if (recipe.realm !== undefined && skillBoosts.data.realms.length >= 2 && getSetting('autoSwapRealms'))
 		skillBoosts.onRealmChange(recipe.realm.id);
 });
 // Swap Realms for Township
 patch(Township, 'setTownBiome').after(function(o, biome, jumpTo) {
-	let realm = biome.abyssalTier ? abyssalRealm : melvorRealm;
-	if (realm instanceof Realm)
-		skillBoosts.onRealmChange(realm.id);
+	if (skillBoosts.data.realms.length >= 2 && getSetting('autoSwapRealms')) {
+		let realm = biome.abyssalTier ? abyssalRealm : melvorRealm;
+		if (realm instanceof Realm)
+			skillBoosts.onRealmChange(realm.id);
+	}
 });
 // Swap Realms for Cooking
 patch(Cooking, 'onRecipeSelectionOpenClick').after(function(o, category, realm) {
-	skillBoosts.onRealmChange(realm.id);
+	if (skillBoosts.data.realms.length >= 2 && getSetting('autoSwapRealms'))
+		skillBoosts.onRealmChange(realm.id);
 });
 // Swap Realms for Farming
 patch(FarmingSeedSelectElement, 'setSeedSelection').after(function(o, category, game, realm, plot) {
-	const realmsWithMasteryInCategory = game.farming.getRealmsWithMasteryInCategory(category);
-	if (realmsWithMasteryInCategory.length > 0 && !realmsWithMasteryInCategory.includes(realm))
-		realm = realmsWithMasteryInCategory[0];
-	skillBoosts.onRealmChange(realm.id);
+	if (skillBoosts.data.realms.length >= 2 && getSetting('autoSwapRealms')) {
+		const realmsWithMasteryInCategory = game.farming.getRealmsWithMasteryInCategory(category);
+		if (realmsWithMasteryInCategory.length > 0 && !realmsWithMasteryInCategory.includes(realm))
+			realm = realmsWithMasteryInCategory[0];
+		skillBoosts.onRealmChange(realm.id);
+	}
 });
+// Change the menu's realm when the skill's realm is changed
+patch(Skill, 'selectRealm').after(function(o, realm) {
+	if (skillBoosts.data.realms.length >= 2 && getSetting('autoSwapRealms') && skillBoosts.data.realms.includes(realm) && skillBoosts.data.menus.has(this.id))
+		skillBoosts.onRealmChange(realm.id, undefined, skillBoosts.data.menus.get(this.id), this.id);
+});
+// Swap realm when weapon damage type changes
+function swapCombatRealm(item) {
+	if (skillBoosts.data.realms.length >= 2 && getSetting('autoSwapRealms')) {
+		let realmID = (!item || item.damageType === game.normalDamage) ? melvorRealm.id : abyssalRealm.id;
+		skillBoosts.onRealmChange(realmID, undefined, skillBoosts.data.menus.get(game.attack.id), game.attack.id);
+		skillBoosts.onRealmChange(realmID, undefined, skillBoosts.data.menus.get(game.thieving.id), game.thieving.id);
+	}
+}
 
 
 
@@ -602,15 +611,6 @@ function updateItem() {
 	skillBoosts.renderQueue.items.clear();
 }
 
-function swapCombatRealm(item) {
-	let skillID = game.attack.id,
-		menu = skillBoosts.data.menus.get(skillID),
-		icons = skillBoosts.getSkillIcons(false, false, false, skillID),
-		realmID = (!item || item.damageType === game.normalDamage) ? melvorRealm.id : abyssalRealm.id;
-
-	skillBoosts.onRealmChange(realmID, icons, menu, skillID);
-}
-
 function lazyRender() {
 	updateCurrency();
 	updateItem();
@@ -632,20 +632,18 @@ function clearRenderer() {
 }
 
 // Misc Patching
-// Move the Menu with the Player
+// Update the menu on new skill
 patch(SidebarItem, 'click').after(function(o) {
-	if (game.skillPageMap.has(game.skills.getObjectByID(this.id)) || this.id === 'melvorD:Combat')
+	if (game.skillPageMap.has(game.skills.getObjectByID(this.id)))
 		skillBoosts.onSkillChange(true);
-	sideBarClicked = true;
+	else if (game.pages.registeredObjects.has(this.id)) {
+		skillBoosts.selectedSkillID = undefined;
+		skillBoosts.menu = undefined;
+	}
 });
+// Update the menu when a combat skill or the combat minibar is clicked
 patch(BaseManager, 'onCombatPageChange').after(function(o) {
-	if (!sideBarClicked)
-		setTimeout(() => { skillBoosts.onSkillChange(true); }, 250);
-	sideBarClicked = false;
-});
-patch(Skill, 'selectRealm').after(function(o, realm) {
-	if (hasItA && get('autoSwapRealms') && skillBoosts.data.realms.includes(realm))
-		skillBoosts.onRealmChange(realm.id);
+	skillBoosts.onSkillChange(true);
 });
 // Update menu on tutorial completion
 patch(Tutorial, 'completeTutorial').after(function(o) {

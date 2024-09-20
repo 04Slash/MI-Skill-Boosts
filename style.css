@@ -18,7 +18,8 @@ sb-tooltip .sb-tooltip {
 	top: 0;
 	left: 0;
 	background: #222;
-	color: #fff
+	color: #fff;
+	border-radius: 0.5rem;
 }
 sb-tooltip .sb-main-tooltip {
 	z-index: 1000011
@@ -38,7 +39,7 @@ sb-tooltip .sb-tooltip-arrow {
 	transform: rotate(45deg);
 }
 [data-sbTooltipContent] {
-    display: none;
+	display: none;
 }
 .sb-menu,.sb-combat-menu {
 	font-size: .9rem
@@ -85,9 +86,11 @@ body.darkMode .sb-menu, body.darkMode .sb-combat-menu  {
 	font-size: .8rem;
 	height: 28px!important
 }
+.sb-color-setting {
+	width:75px
+}
 .sb-picker {
 	position: relative;
-	border-radius: 5px;
 	height: 40px;
 	width: 40px;
 	padding: 0;
@@ -139,6 +142,13 @@ body.darkMode .sb-menu, body.darkMode .sb-combat-menu  {
 	left: 28px;
 	height: 32px;
 	width: 32px
+}
+.relic-skill-sb {
+	position: absolute;
+	top: 12px;
+	left: 12px;
+	height: 28px;
+	width: 28px
 }
 .resize-28 {
 	height: 28px;

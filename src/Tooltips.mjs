@@ -91,7 +91,7 @@ class Tooltip extends HTMLElement {
 			['blur', () => {
 				// Don't hide if the element blurs but any tooltip element is still hovered.
 				// it would hide the tooltip from another element being hovered
-				if (this.showFor?.matches(':hover'))
+				if (this.showFor && this.showFor.matches(':hover'))
 					return;
 
 				this._hide();
@@ -178,14 +178,14 @@ class Tooltip extends HTMLElement {
 		if (this.id === 'Main') {
 			try {
 				this._tooltipContent.innerHTML = '';
-				let item = element.parentElement.item;
+				let icon = element.parentElement;
 				let tooltipContent = element.querySelector('[data-sbTooltipContent]');
 				if (tooltipContent)
 					this._tooltipContent.innerHTML = tooltipContent.innerHTML;
-				else if (element.parentElement.basicTooltip)
-					this._tooltipContent.innerHTML = element.parentElement.tooltip.innerHTML;
+				else if (icon.basicTooltip)
+					this._tooltipContent.innerHTML = icon.tooltip.innerHTML;
 				else
-					this._tooltipContent.appendChild(skillBoosts.createTooltip(item));
+					this._tooltipContent.appendChild(skillBoosts.createTooltip(icon.item, icon));
 			} catch (exception) {
 				console.error(`Failed to update tooltip content.`, element, exception);
 			}
