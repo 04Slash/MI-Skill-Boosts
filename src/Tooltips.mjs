@@ -167,14 +167,12 @@ class Tooltip extends HTMLElement {
 			this._update(this.showFor, this.anchorFor);
 	}
 	_update(element, anchor) {
-		if (element.dataset.sbtooltipdisabled != null)
-			return this._hide();
-
 		if (this._tooltip.style.display !== 'block')
 			return;
 
 		if (element !== this.showFor)
 			return;
+
 		if (this.id === 'Main') {
 			try {
 				this._tooltipContent.innerHTML = '';
@@ -230,9 +228,6 @@ class Tooltip extends HTMLElement {
 		}
 	}
 	_show(element, anchor) {
-		if (element.dataset.mcstooltipdisabled != null)
-			return;
-
 		this.showFor = element;
 		this.anchorFor = anchor;
 		this._tooltip.style.display = 'block';

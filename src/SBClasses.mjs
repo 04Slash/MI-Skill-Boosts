@@ -62,7 +62,7 @@ class SkillBoostsIcon extends SkillBoostsIconElement {
 		this.image = this.container.appendChild(createElement('img', { className: `p-1 resize-${size}` }));
 
 		if (this.category === 'Relic')
-			this.skillImage = this.container.appendChild(createElement('img', { className: `p-1 relic-skill-sb`, attributes: [['src', this.item.skill.media]] }));
+			this.skillImage = this.container.appendChild(createElement('img', { className: `p-1 sb-relic-skill`, attributes: [['src', this.item.skill.media]] }));
 
 		if (basicTooltip)
 			this.tooltip = createElement('div', { attributes: [['data-sbTooltipContent', '']] }).appendChild(createElement('div', { className: 'font-size-sm' })).parentElement;
@@ -70,7 +70,7 @@ class SkillBoostsIcon extends SkillBoostsIconElement {
 			this.setImage(media);
 
 		if (this.category === 'Obstacle')
-			this.inactiveIcon = this.container.appendChild(createElement('img', { className: 'inactive-sb d-none', attributes: [['src', inactiveIcon]] }));
+			this.inactiveIcon = this.container.appendChild(createElement('img', { className: 'sb-inactive d-none', attributes: [['src', inactiveIcon]] }));
 
 		if (this.text)
 			this.container.append(this.text.parentElement);

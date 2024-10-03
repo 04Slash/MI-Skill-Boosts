@@ -11,7 +11,7 @@ let noPreservation = ['melvorD:Attack', 'melvorD:Farming', 'melvorD:Township', '
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 	abyssalRealm = cloudManager.hasItAEntitlementAndIsEnabled && game.realms.getObjectByID('melvorItA:Abyssal');
 
-export function sortModdedSkill(data) {
+function sortModdedSkill(data) {
 	if (data.noPreservation) noPreservation.push(data.skill.id);
 	if (data.noMastery) noMastery.push(data.skill.id);
 	if (data.noSummon) noSummon.push(data.skill.id);
@@ -24,17 +24,17 @@ export function sortModdedSkill(data) {
 	if (data.isArtisan) isArtisan.push(data.skill.id);
 }
 
-export function getCommonModifiers(skillID) {
-	let preservation = !noPreservation.some(x => x === skillID),
-		mastery = !noMastery.some(x => x === skillID),
-		summon = !noSummon.some(x => x === skillID),
-		potion = !noPotion.some(x => x === skillID),
-		double = !noDoubling.some(x => x === skillID),
-		interval = !noInterval.some(x => x === skillID),
-		consumable = !noConsumable.some(x => x === skillID),
-		primaryResource = !noPrimaryResource.some(x => x === skillID),
-		combat = isCombat.some(x => x === skillID),
-		artisan = isArtisan.some(x => x === skillID),
+function getCommonModifiers(skillID) {
+	let preservation = !noPreservation.includes(skillID),
+		mastery = !noMastery.includes(skillID),
+		summon = !noSummon.includes(skillID),
+		potion = !noPotion.includes(skillID),
+		double = !noDoubling.includes(skillID),
+		interval = !noInterval.includes(skillID),
+		consumable = !noConsumable.includes(skillID),
+		primaryResource = !noPrimaryResource.includes(skillID),
+		combat = isCombat.includes(skillID),
+		artisan = isArtisan.includes(skillID),
 		modifiers = ['skillPetLocationChance', 'itemSaleCurrencyGain', 'currencyGainBasedOnProduct', 'additionalRandomGemChance'];
 
 	if (!combat) modifiers.push('offItemChance', 'additionalRandomSkillItemChancePerInterval', 'randomProductChance', 'flatBaseRandomProductQuantity', 'additionalRandomSkillItemChance', 'flatAdditionalSkillItem', 'additionalItemBasedOnPrimaryQuantityChance', 'skillItemDoublingChance', 'doubleItemsSkill');
@@ -80,8 +80,8 @@ export function getCommonModifiers(skillID) {
 }
 
 
-export function getMelvorModifiers(skillID) {
-	let combat = isCombat.some(x => x === skillID),
+function getMelvorModifiers(skillID) {
+	let combat = isCombat.includes(skillID),
 		modifiers = ['allowSignetDrops', 'skillXP'],
 		skill = game.skills.getObjectByID(skillID);
 
@@ -112,8 +112,8 @@ export function getMelvorModifiers(skillID) {
 	return modifiers;
 }
 
-export function getAbyssalModifiers(skillID) {
-	let combat = isCombat.some(x => x === skillID),
+function getAbyssalModifiers(skillID) {
+	let combat = isCombat.includes(skillID),
 		modifiers = ['abyssalSkillXP'],
 		skill = game.skills.getObjectByID(skillID);
 
@@ -144,3 +144,5 @@ export function getAbyssalModifiers(skillID) {
 	});
 	return modifiers;
 }
+
+export { noPreservation, sortModdedSkill, getCommonModifiers, getMelvorModifiers, getAbyssalModifiers };

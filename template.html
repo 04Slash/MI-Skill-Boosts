@@ -8,17 +8,17 @@
 				<div id="SB-Dropdown-Skills" class="dropdown-menu max-vh-60 overflow-y-auto"></div>
 			</div>
 			<div class="btn-group p-1">
-				<button id="SB-Filter-Btn" class="btn sb-btn btn-warning btn-sm-sb">
+				<button id="SB-Filter-Btn" class="btn sb-btn btn-warning sb-btn-sm">
 					<sb-lang sb-lang-id="FILTER"></sb-lang>
 				</button>
-				<button id="SB-Presets-Btn" class="btn sb-btn btn-info btn-sm-sb d-none">
+				<button id="SB-Presets-Btn" class="btn sb-btn btn-info sb-btn-sm d-none">
 					<sb-lang sb-lang-id="PRESETS"></sb-lang>
 				</button>
-				<button id="SB-Boosts-Btn" class="btn sb-btn btn-success btn-sm-sb">
+				<button id="SB-Boosts-Btn" class="btn sb-btn btn-success sb-btn-sm">
 					<sb-lang sb-lang-id="BOOSTS"></sb-lang>
 				</button>
 			</div>
-			<button id="SB-Debug-Btn" class="btn sb-btn btn-secondary btn-sm-sb m-1 d-none">Debug</button>
+			<button id="SB-Debug-Btn" class="btn sb-btn btn-secondary sb-btn-sm m-1 d-none">Debug</button>
 			<div class="p-1">
 				<div class="input-group">
 					<input id="SB-Modifier-Search" class="form-control sb-btn px-2" type="text" name="SB-Search-Bar" autocomplete="off" placeholder="Search Modifier Text"></input>
@@ -40,8 +40,8 @@
 			</div>
 		</div>
 		<div>
-			<div id="SB-Icon-Menu" class="row justify-content-around no-gutters px-3-sb">
-				<span id="SB-Equipment-Parent" class="sb-left">
+			<div id="SB-Icon-Menu" class="row justify-content-around no-gutters sb-px-3">
+				<span id="SB-Equipment-Parent">
 					<div>
 						<i id="SB-Info" data-sbMainTooltip class="fa fa-sm fa-info-circle">
 							<div data-sbTooltipContent></div>
@@ -68,7 +68,7 @@
 					</div>
 					<div id="SB-Positive-Icons"></div>
 				</span>
-				<span id="SB-Negative-Parent" class="sb-right">
+				<span id="SB-Negative-Parent">
 					<div>
 						<sb-lang class="text-danger" sb-lang-id="NEGATIVE"></sb-lang>
 					</div>
@@ -89,7 +89,7 @@
 </template>
 
 <template id="SkillBoosts-Agility-Selection">
-	<div class="block block-rounded m-0">
+	<div class="block sb-swal">
 		<div id="SB-Built-Container" class="row no-gutters">
 			<div class="col-12 justify-content-center">
 				<h5 id="SB-Built-Name" class="p-1 rounded font-size-sm font-w700 mb-1 bg-agility"></h5>
