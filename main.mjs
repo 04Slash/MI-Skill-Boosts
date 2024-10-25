@@ -1,13 +1,16 @@
-export async function setup({ settings, loadModule, loadTemplates, onCharacterSelectionLoaded, onInterfaceReady, getResourceUrl, characterStorage }) {
+export async function setup({ settings, loadModule, loadTemplates, onCharacterSelectionLoaded, onCharacterLoaded, onInterfaceReady, getResourceUrl, characterStorage }) {
 	await loadTemplates('template.html');
+	document.body.append(createElement('sb-tooltip'), createElement('sb-tooltip'));
+
 	const getSlot = (id) => game.equipmentSlots.getObjectByID(id),
 		filterSetting = (x) => !filterByIDSetting.some(y => y !== '' && x.id.toLowerCase().includes(y)),
 		{ lang } = await loadModule('localization.mjs'),
 		{ addLevelChangeEmitters, startRenderer } = await loadModule('src/Patching.mjs'),
-		{ SBSave, SkillBoostsIcon, SkillBoostsSynergy, SBAgilitySelect, customColorSetting, agiCostSetting } = await loadModule('src/SBClasses.mjs'),
-		{ noPreservation, sortModdedSkill, getCommonModifiers, getMelvorModifiers, getAbyssalModifiers } = await loadModule('src/ModifierData.mjs'),
+		{ SkillBoostsIcon, SkillBoostsSynergy, SBAgilitySelect, SBRenderQueue, SBCompactCheckboxGroup, AgilityCostSetting, SBColorSetting } = await loadModule('src/SBClasses.mjs'),
+		{ noPreservation, checkAgilityCourses, sortModdedSkill, getCommonModifiers, getMelvorModifiers, getAbyssalModifiers } = await loadModule('src/ModifierData.mjs'),
 		{ MainTooltipController, AltTooltipController } = await loadModule('src/Tooltips.mjs'),
 		{ ImageLoader } = await loadModule('src/ImageLoader.mjs'),
+		{ SBSaver } = await loadModule('src/SBSave.mjs'),
 		getLang = (key) => {
 			if (!lang[key]) {
 				return `SkillBoosts: Undefined Lang`;
@@ -16,14 +19,16 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		},
 		generalSettings = settings.section('General'),
 		getSetting = (setting) => generalSettings.get(setting),
+		setSetting = (setting, value) => generalSettings.set(setting, value),
 		player = game.combat.player,
 		hasTotH = cloudManager.hasTotHEntitlementAndIsEnabled,
 		hasAoD = cloudManager.hasAoDEntitlementAndIsEnabled,
 		hasItA = cloudManager.hasItAEntitlementAndIsEnabled,
-		defaultRealm = { id: getLangString('BANK_STRING_14'), name: getLang('NO_REALM'), media: assets.getURI('assets/media/main/skill_tree.svg') },
+		defaultRealm = { id: 'Skill_Boosts:No_Realm', name: getLang('NO_REALM'), media: assets.getURI('assets/media/main/skill_tree.png') },
 		melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 		abyssalRealm = hasItA && game.realms.getObjectByID('melvorItA:Abyssal'),
 		eternalRealm = hasItA && game.realms.getObjectByID('melvorItA:Eternal'),
+		intoTheAbyss = game.dungeons.getObjectByID('melvorItA:Into_The_Abyss'),
 		slotTypes = ['melvorD:Weapon', 'melvorD:Shield', 'melvorD:Helmet', 'melvorD:Platebody', 'melvorD:Platelegs', 'melvorD:Boots', 'melvorD:Gloves', 'melvorD:Cape', 'melvorD:Amulet', 'melvorD:Ring', 'melvorD:Gem', 'melvorD:Enhancement1', 'melvorD:Enhancement2', 'melvorD:Enhancement3', 'melvorD:Quiver', 'melvorD:Summon1', 'melvorD:Consumable'],
 		providedRunes = ['melvorD:Air_Rune', 'melvorD:Water_Rune', 'melvorD:Earth_Rune', 'melvorD:Fire_Rune', 'melvorF:Nature_Rune', 'melvorF:Spirit_Rune', 'melvorF:Lava_Rune', 'melvorF:Mud_Rune', 'melvorTotH:Soul_Rune', 'melvorTotH:Infernal_Rune'],
 		catOverrides = ['melvorD:Allotment', 'melvorD:Herb', 'melvorD:Tree', 'melvorD:Fish', 'melvorD:Soup', 'melvorF:Consumables', 'melvorF:Runes', 'melvorF:Wands', 'melvorD:Synergies'],
@@ -52,11 +57,11 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		dustItems = [],
 		filteredPets = [],
 		filterByIDSetting = [],
-		elementValueMap = new Map(),
 		greenBg, yellowBg, redBg, defaultBg, filteredBg,
 		getPresetSetting,
 		windowWidth,
-		lockedSynergyImg = assets.getURI('assets/media/skills/summoning/synergy_locked.svg'),
+		lockedSynergyImg = assets.getURI('assets/media/skills/summoning/synergy_locked.png'),
+		fullRelicImg = assets.getURI('assets/media/main/relic_progress_5.png'),
 		passiveImg = getResourceUrl('assets/passive_slot_filled.png'),
 		passiveIcon = createImgNode(passiveImg, 'sb-inactive'),
 		abyssalRelicImage = getResourceUrl('assets/abyssalRelic.png'),
@@ -85,7 +90,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		else if (colorClass !== '')
 			icon.className = [`badge-pill bg-${colorClass} text-${colorClass} font-size-xs`];
 		else
-			textNode.textContent = `•${textNode.textContent}`;
+			textNode.textContent = `• ${textNode.textContent}`;
 		if (bg || colorClass !== '')
 			template.append(icon);
 		template.append(textNode);
@@ -132,47 +137,6 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		return [filterInfotip, equipmentInfotip, consumableInfotip, obstacleInfotip, otherInfotip];
 	}
 
-	class SBRenderQueue {
-		constructor() {
-			this.equipment = {
-				bg: new Set(),
-				charge: new Set()
-			};
-			this.consumable = {
-				bg: new Set(),
-				qty: new Set()
-			};
-			this.obstacle = {
-				bg: new Set(),
-				active: new Set()
-			};
-			this.poi = {
-				bg: new Set(),
-				cost: new Set()
-			};
-			this.pet = {
-				bg: new Set()
-			};
-			this.purchase = {
-				bg: new Set()
-			};
-			this.constellation = {
-				bg: new Set()
-			};
-			this.synergy = {
-				bg: new Set(),
-				qty: new Set(),
-				locked: new Set()
-			};
-			this.relic = {
-				bg: new Set()
-			};
-			this.items = new Map();
-			this.currency = new Map();
-			this.menu = false;
-		}
-	}
-
 	class SkillBoostMenu extends HTMLElement {
 		constructor(skill) {
 			super();
@@ -213,7 +177,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			this.boostsBtn.onclick = () => this.toggleMenu(false);
 			this.presetsBtn.onclick = () => this.openPresetMenu();
 			this.debugBtn.onclick = () => this.toggleDebug();
-			this.massFilterToggle.onclick = () => this.toggleMassFiltering(this.massFilterToggle.checked);
+			this.massFilterToggle.onclick = () => setSetting('massFiltering', !getSetting('massFiltering'));
 			this.searchBar.onkeyup = () => this.onSearchChange(this.searchBar.value);
 			this.clearSearchBtn.onclick = () => { this.searchBar.value = '', this.onSearchChange(''); };
 
@@ -262,7 +226,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 
 			this.translate(this.container);
 			this.createTooltips();
-			this.toggleMassFiltering(skillBoosts.data.menuStates.get('mf') === '1' ? true : false, true);
+			this.massFilterToggle.checked = getSetting('massFiltering');
 			this.skill = this.skill.id;
 		}
 		appendCombatMenu() {
@@ -368,23 +332,16 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		toggleMenu(onLoad) {
 			if (!skillBoosts.skillPage)
 				return;
-			let state = skillBoosts.data.menuStates.get(skillBoosts.skillPage) === '1';
+			let menuOpen = skillBoosts.saveData.get(skillBoosts.skillPage).includes('Skill_Boosts:Menu_Opened');
 			if (onLoad)
-				state = !state;
+				menuOpen = !menuOpen;
 			else {
-				skillBoosts.data.menuStates.set(skillBoosts.skillPage, `${state ? '0' : '1'}`);
-				SBSave.save();
+				skillBoosts.removeValueFromMap(skillBoosts.saveData, skillBoosts.skillPage, `Skill_Boosts:${menuOpen ? 'Menu_Opened' : 'Menu_Closed'}`);
+				skillBoosts.addValueToMap(skillBoosts.saveData, skillBoosts.skillPage, `Skill_Boosts:${menuOpen ? 'Menu_Closed' : 'Menu_Opened'}`);
 			}
-			state ? hideElement(this.iconMenu) : showElement(this.iconMenu);
+			menuOpen ? hideElement(this.iconMenu) : showElement(this.iconMenu);
 			if (skillBoosts.skillPage === 'melvorAoD:Cartography')
 				skillBoosts.updateCartographyMap();
-		}
-		toggleMassFiltering(checked, onLoad = false) {
-			skillBoosts.data.menus.forEach(menu => menu.massFilterToggle.checked = checked);
-			if (!onLoad) {
-				skillBoosts.data.menuStates.set('mf', `${checked ? 1 : 0}`);
-				SBSave.save();
-			}
 		}
 		toggleFilterAlert() {
 			filterMode ? showElement(this.alert) : hideElement(this.alert);
@@ -497,9 +454,10 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 	class SkillBoosts {
 		constructor() {
 			this.renderQueue = new SBRenderQueue();
-			this.mainTooltipController = MainTooltipController;
-			this.data = { skills: [], realms: [], realmIDs: [], modifiers: new MultiMap(2), menus: new Map(), icons: new Map(), skillRealms: new Map(), filteredItems: new Map([['agi', []]]), menuStates: new Map([['mf', '0']]), realmStates: new Map(), agiSelectArr: [] };
+			this.MainTooltipController = MainTooltipController;
+			this.data = { skills: [], realms: [], realmIDs: [], modifiers: new MultiMap(2), menus: new Map(), icons: new Map(), skillRealms: new Map(), agiSelectArr: [] };
 			this.modData = { skills: [], modifiers: [], realms: [], headers: new Map() };
+			this.saveData = new Map();
 			this.agiCosts = false;
 		}
 		get skillPage() {
@@ -532,12 +490,21 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		}
 		initSettings() {
 			this.updateBackgrounds(getSetting('colorBgs'), true);
+
 			filterByIDSetting = getSetting('filter').toLowerCase().replace(/\s/g, '').split(",");
-			if (!this.data.menuStates.has('mf'))
-				this.data.menuStates.set('mf', '0');
+
 			if (getSetting('instaBuildObstacle') === true && !characterStorage.getItem('ibo')) {
-				generalSettings.set('obstacleMenu', 'never');
+				setSetting('obstacleMenu', 'never');
 				characterStorage.setItem('ibo', 1);
+			}
+			if (this.data.realms.length >= 3) {
+				let oldRealmState = getSetting('realmStates');
+				if (oldRealmState !== undefined && !characterStorage.getItem('r')) {
+					if (oldRealmState === getLangString('BANK_STRING_14'))
+						oldRealmState = defaultRealm.id;
+					setSetting('realmState', oldRealmState);
+					characterStorage.setItem('r', 1);
+				}
 			}
 		}
 		initRealms() {
@@ -571,6 +538,11 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			['melvorD:Attack', 'melvorD:Township'].forEach(skillID => this.data.skillRealms.set(skillID, this.data.realms.filter(x => x.isModded === false).map(x => x.id)));
 			['melvorD:Magic', 'melvorAoD:Cartography'].forEach(skillID => this.data.skillRealms.set(skillID, [melvorRealm.id]));
 			this.modData.headers.set(game.attack.id, combatAreaMenus.categoryMenu.parentElement.lastElementChild);
+
+			this.data.skills.forEach(skill => {
+				if (!this.saveData.has(skill.id) || !this.data.realms.some(x => this.saveData.get(skill.id).includes(x.id)))
+					this.addValueToMap(this.saveData, skill.id, skill.currentRealm.id);
+			});
 		}
 		initModifiers() {
 			this.data.skills.forEach(skill => {
@@ -601,19 +573,14 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 
 				let menuState = getSetting('state');
 				if (menuState === 1) {
-					this.data.menuStates.set(skill.id, '0');
+					this.addValueToMap(this.saveData, skill.id, 'Skill_Boosts:Menu_Closed');
 					hideElement(menu.iconMenu);
 				} else if (menuState === 2) {
-					this.data.menuStates.set(skill.id, '1');
+					this.addValueToMap(this.saveData, skill.id, 'Skill_Boosts:Menu_Opened');
 					showElement(menu.iconMenu);
 				} else
 					menu.toggleMenu(true);
-
-				if (!this.data.realmStates.has(skill.id))
-					this.data.realmStates.set(skill.id, skill.currentRealm.id);
 			});
-			if (hasItA)
-				this.data.realmStates.set(game.harvesting.id, abyssalRealm.id);
 		}
 		updateBackgrounds(colors, onLoad) {
 			[greenBg, yellowBg, redBg, defaultBg, filteredBg] = colors;
@@ -805,16 +772,16 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			if (this.data.realms.length < 3 || (!this.data.realms.some(x => x.id === newRealmID) && newRealmID !== undefined))
 				return;
 
-			let realmState = getSetting('realmStates'),
+			let realmState = getSetting('realmState'),
 				skillRealms = this.data.skillRealms.get(skillID);
 
 			if (!menu || !skillRealms || skillRealms.length <= 1)
 				return;
 
 			if (!newRealmID)
-				newRealmID = realmState === 'Auto' ? this.data.realmStates.get(this.selectedSkillID) : realmState;
+				newRealmID = realmState === 'Auto' ? this.data.realms.find(x => this.saveData.get(skillID).includes(x.id)).id : realmState;
 			if (realmState !== 'Auto' && !skillRealms.includes(newRealmID) && newRealmID !== defaultRealm.id)
-				newRealmID = this.data.realmStates.get(this.selectedSkillID);
+				newRealmID = this.saveData.get(this.selectedSkillID).find(x => this.data.realmIDs.some(y => y === x));
 
 			if (this.selectedSkillID === skillID) {
 				if (!icons)
@@ -827,10 +794,11 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				});
 			}
 
+			let oldRealmID = menu.currentRealm;
 			menu.updateSelectedRealm(newRealmID);
-			if (realmState === 'Auto' || (!skillRealms.includes(newRealmID) && newRealmID !== defaultRealm.id)) {
-				this.data.realmStates.set(this.selectedSkillID, newRealmID);
-				SBSave.save();
+			if (realmState === 'Auto') {
+				this.removeValueFromMap(this.saveData, skillID, oldRealmID);
+				this.addValueToMap(this.saveData, skillID, newRealmID);
 			}
 		}
 		onRealmChange(realmID, icons, menu = this.menu, skillID = this.selectedSkillID) {
@@ -879,27 +847,27 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			if (!modifiers || (!modifiers.has('melvorItA:Abyssal') && realms.includes('melvorItA:Abyssal')))
 				icon['melvorItAAbyssalText'] = [item.description];
 
-
 			icon.elem = elem;
 			icon.skill = skill.id;
 			icon.realms = [...realms, defaultRealm.id];
 			this.data.menus.get(skill.id).iconContainers[elem].appendChild(icon);
 
-			if (game.openPage.skills && game.openPage.skills[0] === skill && icon.realms.includes(this.data.realmStates.get(skill.id))) {
-				let media = category === 'Relic' ? realms.includes('melvorItA:Abyssal') ? abyssalRelicImage : assets.getURI('assets/media/main/relic_progress_5.png') : item.media;
+			if (game.openPage.skills && game.openPage.skills[0] === skill && this.saveData.get(skill.id).some(x => icon.realms.includes(x))) {
+				let media = category === 'Relic' ? realms.includes('melvorItA:Abyssal') ? abyssalRelicImage : fullRelicImg : item.media;
 				icon.setImage(media);
 			}
 
 			let id = category === 'Synergy' ? this.getSynergyID(item) : item.id;
-			if (this.data.filteredItems.has(id) && this.data.filteredItems.get(id).includes(skill.id))
+			if (this.saveData.has(skill.id) && this.saveData.get(skill.id).includes(id))
 				this.toggleFilterState(icon, undefined, false);
 			else
 				icon.isFiltered = false;
 
-			if (category !== undefined)
+			if (category) {
 				this.setIconOnClick(icon, item, category);
+				this.addValueToMap(this.data.icons, skill.id, icon);
+			}
 
-			this.addValueToMap(this.data.icons, skill.id, icon);
 			return icon;
 		}
 		setIconOnClick(icon, item, category) {
@@ -924,10 +892,10 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			else if (category === 'Relic')
 				icon.onclick = () => this.relicOnClick(icon);
 		}
-		getAllIcons(exclude) {
+		getAllIcons(excludedSkill) {
 			let icons = [];
 			this.data.icons.forEach((iconArr, skill) => {
-				if (skill !== exclude)
+				if (skill !== excludedSkill)
 					icons.push(...iconArr);
 			});
 			return icons;
@@ -955,46 +923,24 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		}
 		filterIcon(oIcon) {
 			let isFiltered = oIcon.isFiltered,
-				icons;
-			if (this.menu.massFilterToggle.checked)
-				icons = this.getAllIcons().filter(x => x.item === oIcon.item);
-			else
-				icons = this.getAllIcons().filter(x => x.skill === oIcon.skill && x.item === oIcon.item);
-			oIcon.isFiltered ? this.removeFilteredItem(oIcon) : this.addFilteredItem(oIcon);
+				icons = getSetting('massFiltering') ? this.getAllIcons().filter(x => x.item === oIcon.item) : [oIcon];
+
 			icons.forEach(icon => this.toggleFilterState(icon, !isFiltered, true));
+
+			this.saveFilteredIcon(icons, isFiltered);
 			this.render();
 		}
 		toggleFilterState(icon, setState, showIcon) {
-			icon.isFiltered = setState || !icon.isFiltered;
+			icon.isFiltered = setState !== undefined ? setState : !icon.isFiltered;
 			icon.isFiltered ? icon.setBg(filteredBg) : this.menu.updateIcon(icon);
 			showIcon ? icon.show() : icon.hide();
 		}
-		addFilteredItem(icon) {
-			let id = icon.category === 'Synergy' ? this.getSynergyID(icon.item) : icon.item.id,
-				skills = this.data.filteredItems.get(id);
-
-			if (this.menu.massFilterToggle.checked)
-				this.data.filteredItems.set(id, this.getAllIcons().filter(x => x.item === icon.item).map(x => x.skill));
-			else {
-				let toFilter = this.selectedSkillID;
-				if (skills === undefined)
-					this.data.filteredItems.set(id, [toFilter]);
-				else if (!skills.includes(toFilter))
-					skills.push(toFilter);
-			}
-			SBSave.save();
-		}
-		removeFilteredItem(icon) {
-			let id = icon.category === 'Synergy' ? `${icon.item.summons[0].id}+${icon.item.summons[1].id}` : icon.item.id,
-				skills = this.data.filteredItems.get(id);
-			if (this.menu.massFilterToggle.checked)
-				this.data.filteredItems.delete(id);
-			else {
-				skills.splice(skills.indexOf(this.selectedSkillID), 1);
-				if (skills.length === 0)
-					this.data.filteredItems.delete(id);
-			}
-			SBSave.save();
+		saveFilteredIcon(icons, remove) {
+			icons.forEach(icon => {
+				let id = icon.category === 'Synergy' ? this.getSynergyID(icon.item) : icon.item.id;
+				let saveIcon = remove ? this.removeValueFromMap : this.addValueToMap;
+				saveIcon(this.saveData, icon.skill, id);
+			});
 		}
 		hideUndiscoveredIcons(icon, shouldHide, category) {
 			if (shouldHide && getSetting('hideRedBgs').includes(category) || icon.isFiltered)
@@ -1056,7 +1002,8 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 
 				const isAbyssal = realm === abyssalRealm,
 					isMelvor = realm === melvorRealm,
-					hasDamageType = (obj) => (!obj || !obj.damageType || (isAbyssal && obj.damageType.id === 'melvorItA:Abyssal') || (isMelvor && obj.damageType.id === 'melvorD:Normal') || (!isMelvor && !isAbyssal && game.combatAreas.some(x => x.realm === realm && x.monsters.length > 0 && x.monsters[0].damageType === obj.damageType)));
+					damageType = isAbyssal ? 'melvorItA:Abyssal' : 'melvorD:Normal',
+					hasDamageType = (obj) => (!obj || !obj.damageType || obj.damageType.id === damageType || (!isMelvor && !isAbyssal && game.combatAreas.some(x => x.realm === realm && x.monsters.length > 0 && x.monsters[0].damageType === obj.damageType)));
 
 				if (item instanceof WeaponItem && (skill.isCombat || skill === game.thieving) && !hasDamageType(item))
 					return;
@@ -1441,7 +1388,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				}
 			}
 
-			if (this.data.filteredItems.has(fillerObstacle.id) && this.data.filteredItems.get(fillerObstacle.id).includes(skill.id))
+			if (this.saveData.has(skill.id) && this.saveData.get(skill.id).includes(fillerObstacle.id))
 				this.toggleFilterState(fillerIcon, undefined, false);
 			else
 				fillerIcon.isFiltered = false;
@@ -1517,7 +1464,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			return costs;
 		}
 		hasObstacleRequirements(obstacle) {
-			return (game.agility.isSlotUnlocked(obstacle.slot) && (!obstacle.skillRequirements || game.checkRequirements(obstacle.skillRequirements)));
+			return (game.agility.isSlotUnlocked(obstacle.slot) && (!obstacle.skillRequirements || game.checkRequirements(obstacle.skillRequirements)) && this.canAccessAbyssalRealm(obstacle));
 		}
 		canBuildObstacle(obstacle) {
 			return this.getObstacleCost(obstacle).checkIfOwned() && this.hasObstacleRequirements(obstacle);
@@ -1663,7 +1610,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			dustItems.forEach(icon => icon.setText(game.bank.getQty(icon.item)));
 		}
 		isModifierUnlocked(constellation, requirements) {
-			return game.astrology.isBasicSkillRecipeUnlocked(constellation) && isRequirementMet(requirements);
+			return game.astrology.isBasicSkillRecipeUnlocked(constellation) && isRequirementMet(requirements) && this.canAccessAbyssalRealm(constellation);
 		}
 		createConstellationPanel(constellation) {
 			let panel = new AstrologyExplorationPanelElement(),
@@ -1697,10 +1644,13 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 						setModifiers(id, mod, multi, type);
 					else
 						lockModifiers(id, requirements, mod, type);
+
 					if (!this.isModifierUnlocked(constellation, requirements) && getSetting('astroSpoilers')) {
 						elem.upgradeButton.disabled = true;
 						let unlockNodes = printUnlockAllRequirements(requirements);
 						unlockNodes.forEach(node => panel[menu][id].modifierText.append(node));
+						if (hasItA && constellation.abyssalLevel >= 1 && !abyssalRealm.isUnlocked)
+							panel[menu][id].modifierText.append(this.getItACompletionNode(false));
 					}
 
 					elem.setUpgradeCallback(() => {
@@ -1743,7 +1693,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			if (icon === undefined)
 				return;
 			let shouldHide = false;
-			if (game.astrology.isBasicSkillRecipeUnlocked(constellation))
+			if (game.astrology.isBasicSkillRecipeUnlocked(constellation) && this.canAccessAbyssalRealm(constellation))
 				icon.setBg(defaultBg);
 			else {
 				shouldHide = true;
@@ -1929,13 +1879,12 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				showElement(parent);
 				if (lay4th && i === 4) return;
 				parent.style.flex = `0 0 ${maxPX[i]}px`;
-				if (!firstParent)
-					firstParent = parent;
+				if (!firstParent) firstParent = parent;
 				parent.classList.remove('mr-0', 'ml-0');
 				lastParent = parent;
 			});
-			firstParent.classList.add('ml-0');
-			lastParent.classList.add('mr-0');
+			if (firstParent) firstParent.classList.add('ml-0');
+			if (lastParent) lastParent.classList.add('mr-0');
 			if (this.skillPage === 'melvorAoD:Cartography')
 				this.updateCartographyMap();
 		}
@@ -1987,7 +1936,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 
 			if (item instanceof PointOfInterest) {
 				name.textContent = getLang('SELECT_POI');
-				this.createPOISelection(iconContainer, item);
+				this.createPOISelection(iconContainer);
 			} else if (item instanceof EquipmentItem) {
 				name.textContent = getLang('SELECT_SLOT');
 				this.createSlotSelection(iconContainer, element, item);
@@ -2173,13 +2122,14 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			});
 		}
 		createModifierNode(obj) {
-			let node = createElement('h5', { className: `${obj.isInfo ? 'text-info' : getStandardDescTextClass(obj, false)} sb-font-2sm m-1 font-w400` });
+			let node = createElement('h5', { className: `${obj.isInfo ? 'text-info' : obj.isWarning ? 'text-warning font-w600' : getStandardDescTextClass(obj, false)} sb-font-2sm m-1 font-w400` });
 			if (obj.text.indexOf('text-warning') > 0)
 				obj.text = obj.text.slice(0, obj.text.search('text-warning') - 13);
 			node.innerHTML = applyDescriptionModifications(obj.text);
+			node.order = obj.order ? obj.order : obj.isInfo ? 1 : obj.isNegative ? 3 : obj.isDisabled ? 4 : 2;
 			return node;
 		}
-		getModifierNodes(statObject, negMult, posMult, includeZero = false) {
+		getModifierNodes(statObject, negMult, posMult, includeZero = false, isConditional, isItemSynergy) {
 			let descriptions = [],
 				returnOriginal = false,
 				itemModifiers = statObject.modifiers || [],
@@ -2213,26 +2163,35 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					}
 				});
 			}
-			if (statObject.conditionalModifiers !== undefined) {
-				let prevDescriptions = [];
+			if (statObject.conditionalModifiers !== undefined && !isConditional) {
 				statObject.conditionalModifiers.forEach(conditional => {
-					if (returnOriginal)
-						return;
-					let desc = conditional.getDescription(negMult, posMult);
-					if (desc === undefined)
-						returnOriginal = true;
-					if (desc !== undefined && !prevDescriptions.includes(desc.text) && StatObject.showDescription(conditional.isNegative, negMult, posMult, includeZero)) {
+					let conditionalDescriptions = this.getModifierNodes(conditional, negMult, posMult, false, true),
+						desc = conditional.getDescription(negMult, posMult);
+
+					if (desc && ((conditional.modifiers && conditional.modifiers.length || 0) + (conditional.combatEffects && conditional.combatEffects.length || 0) + (conditional.enemyModifiers && conditional.enemyModifiers.length || 0)) === conditionalDescriptions.length) {
+						desc.text = desc.text.slice(0, desc.text.search(':') + 1);
+						desc.isWarning = true;
+						desc.order = 5;
+						conditionalDescriptions.forEach(d => d.order = d.isNegative ? 7 : d.isDisabled ? 8 : 6);
 						descriptions.push(desc);
-						prevDescriptions.push(desc.text);
-					}
+						descriptions.push(...conditionalDescriptions);
+					} else if (desc)
+						descriptions.push(desc);
+					else if (isItemSynergy)
+						descriptions.push(...conditionalDescriptions);
+					else
+						returnOriginal = true;
 				});
 			}
-			if (returnOriginal || descriptions.length <= 0) {
+			if (isConditional)
+				return descriptions;
+
+			if (descriptions.length <= 0) {
 				if (statObject.description === undefined)
 					return [];
 				return [this.createModifierNode({ text: statObject.description, isInfo: true })];
 			}
-			return descriptions.map(this.createModifierNode).sort((a, b) => (a.classList.contains('text-success') ? 1 : 2) - (b.classList.contains('text-disabled') ? 3 : 2));
+			return descriptions.map(this.createModifierNode).sort((a, b) => (a.order - b.order));
 		}
 		createDividerElem(parent, textClass = '') {
 			return createElement('div', { className: `border-top border-dark border-2x${textClass}`, parent: parent });
@@ -2300,9 +2259,10 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		}
 		createEquipmentTooltip(container, item) {
 			let itemDescription = item._customDescription || item.description;
+			let slotContainer = container.appendChild(createElement('div', { className: 'row no-gutters justify-content-center' }));
 
 			item.validSlots.forEach(slot => {
-				container.append(createElement('small', { className: 'font-w600 font-size-sm m-1', children: [createElement('small', { className: 'sb-badge bg-primary', text: slot.emptyName })] }));
+				slotContainer.append(createElement('small', { className: 'font-w600 font-size-sm m-1', children: [createElement('small', { className: 'sb-badge bg-primary', text: slot.emptyName })] }));
 			});
 
 			if (item.fitsInSlot("melvorD:Summon1"))
@@ -2316,7 +2276,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 
 				descriptions.push(createElement('h5', { className: 'text-warning m-1 sb-font-2sm', text: synergyDesc }));
 				game.itemSynergies.get(item).forEach(synergy => {
-					this.getModifierNodes(synergy, 1, 1, false).forEach(node => {
+					this.getModifierNodes(synergy, 1, 1, false, false, true).forEach(node => {
 						if (node && node.textContent !== '')
 							descriptions.push(node);
 					});
@@ -2474,6 +2434,16 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			if (chanceElem.textContent !== getLang('CHANCE'))
 				miscContainer.append(chanceElem);
 		}
+		canAccessAbyssalRealm(object) {
+			return (!hasItA || ((object.slot && object.slot.abyssalLevel > 1) || object.abyssalLevel > 1) || abyssalRealm.isUnlocked);
+		}
+		getItACompletionNode(inline) {
+			let elemType = inline ? 'span' : 'div',
+				container = createElement(elemType, { className: `text-danger${inline ? ' font-w400 m-2' : ''}` });
+
+			container.append(...abyssalRealm.unlockRequirements[0].getNodes('skill-icon-xs'));
+			return container;
+		}
 		resetFilteredIcons() {
 			Swal.fire({
 				html: `<span class="text-warning">${getLang('SETTING_RESET_DATA')}</span> ${getLang('DELETE_DATA_2')}`,
@@ -2484,17 +2454,18 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				cancelButtonColor: "#5cace5",
 			}).then((result) => {
 				if (result.value) {
-					let agiSetting = this.data.filteredItems.get('agi');
-					characterStorage.removeItem('saveData');
+					this.data.skills.forEach(skill => {
+						let existingData = this.saveData.get(skill.id).filter(x => ['Skill_Boosts:No_Realm', 'melvorD:Melvor', 'melvorItA:Abyssal', 'Skill_Boosts:Menu_Opened', 'Skill_Boosts:Menu_Closed'].includes(x));
+						this.saveData.delete(skill.id);
+						this.saveData.set(skill.id, existingData);
+					});
 					this.getAllIcons().filter(x => x.isFiltered).forEach(icon => {
 						icon.isFiltered = false;
 						icon.show();
 						if (icon.skill === this.selectedSkillID)
 							this.menu.updateIcon(icon);
 					});
-					this.data.filteredItems.set('agi', agiSetting);
 					this.resizeMenu();
-					SBSave.save();
 				};
 			});
 		}
@@ -2533,6 +2504,9 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				val ? showElement(menu.presetsBtn) : hideElement(menu.presetsBtn);
 			});
 		}
+		oldEncode() {
+			return SBSaver.oldEncode();
+		}
 		reInitSB() {
 			this.getAllIcons().forEach(icon => icon.destroy());
 			this.data.menus.forEach(menu => {
@@ -2559,7 +2533,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				this.resizeMenu(this.menu);
 			}
 			let t1 = performance.now();
-			console.log(`%c[Skill Boosts]: Loading took ${t1 - t0}ms`, 'color: #ccaffc');
+			console.log(`%c[Skill Boosts]: Loading took ${Math.floor(t1 - t0)}ms`, 'color: #ccaffc');
 			if (debugEnabled)
 				this.menu.toggleAllDebugBtns();
 		}
@@ -2626,10 +2600,19 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		if (skillBoosts.data.realms.length >= 3) {
 			generalSettings.add([{
 				type: 'dropdown',
-				name: 'realmStates',
+				name: 'realmState',
 				label: getLang('SETTING_REALM_STATE'),
 				options: [{ value: 'Auto', display: getLang('SETTING_REALM_STATE_1') }, { value: defaultRealm.id, display: getLang('SETTING_REALM_STATE_2') }, { value: melvorRealm.id, display: getLang('SETTING_REALM_STATE_3') }, { value: abyssalRealm.id, display: getLang('SETTING_REALM_STATE_4') }],
 				default: 'Auto'
+			}, {
+				type: 'custom',
+				name: 'realmStates',
+				label: 'I guess I have to migrate this setting if I want to change an existing value without resetting the value for everyone :)',
+				options: [{ value: 'Auto', display: '' }, { value: defaultRealm.id, display: '' }, { value: melvorRealm.id, display: '' }, { value: abyssalRealm.id, display: '' }],
+				default: 'Auto',
+				render(name, onChange, config) { return createElement('div', { className: 'd-none' }); },
+				get: function(root) { return root.value; },
+				set: function(root, value) { root.value = value; }
 			}, {
 				type: 'switch',
 				name: 'autoSwapRealms',
@@ -2661,7 +2644,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			name: 'instaBuildObstacle',
 			label: 'DEPRECATED',
 			default: '',
-			render(name, onChange, config) { return createElement('div'); },
+			render(name, onChange, config) { return createElement('div', { className: 'd-none' }); },
 			get: function(root) { return root.value; },
 			set: function(root, value) { root.value = value; }
 		}, {
@@ -2671,39 +2654,15 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			hint: getLang('SETTING_HIDE_REDBGS_HINT'),
 			default: [],
 			options: [{ value: 'Equipment', label: getLangString('COMBAT_MISC_18') }, { value: 'POI', label: getLangString('POINT_OF_INTEREST') }, { value: 'Consumable', label: getLangString('EQUIP_SLOT_Consumable') }, { value: 'Obstacle', label: getLangString('GAME_GUIDE_142') }, { value: 'Purchase', label: getLang('PURCHASES') }, { value: 'Pet', label: getLangString('PAGE_NAME_CompletionLog_SUBCATEGORY_4') }, { value: 'Constellation', label: getLang('CONSTELLATION') }, { value: 'Synergy', label: getLang('SYNERGIES') }, { value: 'Relic', label: getLang('RELICS') }],
-			onChange: (newVal, oldVal) => {
-				let diff = oldVal.find(x => !newVal.includes(x)) || newVal.find(x => !oldVal.includes(x));
-				skillBoosts.getAllIcons().filter(x => x.category === diff).forEach(icon => skillBoosts.menu.updateIcon(icon));
-				skillBoosts.renderQueue.menu = true;
-			},
 			render(name, onChange, config) {
-				let group = createElement('div', { className: 'row justify-content-end' });
-				let label = createElement('label', { className: 'font-weight-normal text-center col-12', text: config.label, parent: group });
-				let hint = createElement('small', { className: 'd-block', text: config.hint, parent: label });
-
-				for (let i = 0; i < config.options.length; i++) {
-					let option = config.options[i];
-					let optName = `${name}[${i}]`;
-					let checkbox = createElement('input', { id: optName, className: 'custom-control-input', attributes: [['type', 'checkbox'], ['name', optName]] });
-					let label = createElement('label', { className: 'font-weight-normal ml-2 custom-control-label', attributes: [['for', optName]], text: option.label });
-					let control = createElement('div', { className: 'custom-control custom-checkbox custom-control-lg mb-2 p-0 col-5', children: [checkbox, label], });
-					if (config.default && config.default.includes(option.value))
-						checkbox.checked = true;
-					checkbox.addEventListener('change', () => onChange());
-					elementValueMap.set(checkbox, option.value);
-					group.appendChild(control);
-				}
-				return group;
+				let setting = new SBCompactCheckboxGroup();
+				setting.init(config);
+				return setting;
 			},
-			get(root) {
-				const checkboxes = root.querySelectorAll('input[type="checkbox"]');
-				const value = [];
-				checkboxes.forEach(c => c.checked && value.push(elementValueMap.get(c)));
-				return value;
-			},
-			set(root, data) {
-				const checkboxes = root.querySelectorAll('input[type="checkbox"]');
-				checkboxes.forEach(c => data && data.includes(elementValueMap.get(c)) && (c.checked = true));
+			get: function(root) { return root.value; },
+			set: function(root, value) {
+				root.value = value;
+				root.checkboxes.forEach(checkbox => checkbox.checked = value.includes(checkbox.value));
 			}
 		}, {
 			type: 'text',
@@ -2724,34 +2683,47 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			label: '',
 			default: ['#005706', '#665e00', '#5c000e', '#434d5b', '#006bb8'], // #6803ab
 			render(name, onChange, config) {
-				let container = createElement('div');
-				container.appendChild(customColorSetting);
-				return container;
+				let setting = new SBColorSetting(config);
+				return setting;
 			},
 			get: function(root) { return root.value; },
-			set: function(root, value) { root.value = value; }
+			set: function(root, value) {
+				root.value = value;
+				root.container.children.forEach((child, i) => {
+					child.children[0].value = value[i];
+					child.children[1].value = value[i];
+				});
+			}
 		}, {
 			type: 'custom',
 			name: 'agilityCost',
 			label: getLang('SETTING_AGILITY_COST'),
 			hint: getLang('SETTING_AGILITY_COST_HINT'),
 			default: [],
-			onChange: (value) => {},
 			render(name, onChange, config) {
-				let container = createElement('div');
-				let label = createElement('label', { className: 'font-weight-normal text-center col-12', text: config.label, parent: container });
-				let hint = createElement('small', { className: 'd-block', text: config.hint, parent: label });
-				container.appendChild(agiCostSetting);
-				return container;
+				let setting = new AgilityCostSetting(config);
+				skillBoosts.agilitySetting = setting;
+				return setting;
 			},
-			get: function(root) {},
-			set: function(root, value) {}
+			get: function(root) { return root.value || []; },
+			set: function(root, value) { root.value = value || []; }
 		}, {
 			type: 'button',
 			name: 'reset',
 			display: getLang('SETTING_RESET_DATA'),
 			color: 'danger',
 			onClick: () => skillBoosts.resetFilteredIcons()
+		}, {
+			type: 'custom',
+			name: 'massFiltering',
+			label: '',
+			default: false,
+			render(name, onChange, config) { return createElement('div', { className: 'd-none' }); },
+			get: function(root) { return root.value; },
+			set: function(root, value) {
+				root.value = value;
+				skillBoosts.data.menus.forEach(menu => menu.massFilterToggle.checked = value);
+			}
 		}]);
 
 		if (mod.manager.getLoadedModList().includes('Equipment Presets')) {
@@ -2797,23 +2769,25 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			ImageLoader.register(icon.summon1Image, icon.item.summons[0].media);
 			ImageLoader.register(icon.summon2Image, icon.item.summons[1].media);
 		} else {
-			let media = icon.category === 'Relic' ? icon.realms.includes('melvorItA:Abyssal') ? abyssalRelicImage : assets.getURI('assets/media/main/relic_progress_5.png') : icon.item.media;
+			let media = icon.category === 'Relic' ? icon.realms.includes('melvorItA:Abyssal') ? abyssalRelicImage : fullRelicImg : icon.item.media;
 			ImageLoader.register(icon.image, media);
 		}
 	}
 
+	onCharacterLoaded(() => {
+		SBSaver.load();
+	});
+
 	onInterfaceReady(() => {
 		const t0 = performance.now();
 		try {
-			document.body.append(createElement('sb-tooltip'), createElement('sb-tooltip'));
-			SBSave.initAndLoad();
+			checkAgilityCourses();
 			skillBoosts.initSB();
 			skillBoosts.data.menus.forEach(menu => {
 				MainTooltipController.initAll(menu.container);
 				AltTooltipController.initAll(menu.container);
 			});
-			agiCostSetting.init();
-			customColorSetting.load();
+			skillBoosts.agilitySetting.init();
 			addLevelChangeEmitters();
 			combatAreaMenus.categoryMenu.children[0].classList.remove('push');
 			document.addEventListener('click', () => AltTooltipController.hide());
@@ -2831,7 +2805,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			skillBoosts.getAllIcons().forEach(addToImageLoader);
 
 		const t1 = performance.now();
-		console.log(`%c[Skill Boosts]: Loading took ${t1 - t0}ms`, 'color: #ccaffc');
+		console.log(`%c[Skill Boosts]: Loading took ${Math.floor(t1 - t0)}ms`, 'color: #ccaffc');
 		// Cleanup old data
 		skillBoosts.data.skills.forEach(skill => characterStorage.removeItem(`${skill.localID}-btn`));
 	});

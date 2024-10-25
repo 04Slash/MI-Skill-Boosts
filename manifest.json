@@ -2,7 +2,7 @@
     "name": "Skill Boosts",
     "namespace": "Skill_Boosts",
     "setup": "main.mjs",
-    "version": "3.3.6",
+    "version": "3.4.5",
     "load": [
         "style.css"
     ]

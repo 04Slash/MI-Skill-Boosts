@@ -15,6 +15,12 @@
 	margin-bottom: 0;
 	border-radius: .5rem
 }
+.mm__container:has(#SB-picker) .mb-4 {
+	margin-bottom: 1rem!important
+}
+.mm__container:has(#SB-picker) .pb-2 {
+	padding-top: 0.5rem!important
+}
 @media(max-width: 767px) {
 	#swal2-html-container:has(.sb-swal) {
 		margin: 6px;
@@ -82,35 +88,6 @@ body.darkMode .sb-menu, body.darkMode .sb-combat-menu  {
 	border-radius: 5px;
 	cursor: pointer
 }
-.sb-synergy-icon {
-	position: relative;
-	border-radius: 5px;
-	cursor: pointer;
-	height: 40px;
-	width: 88px;
-	margin: 4px
-}
-.sb-input {
-	margin: none;
-	padding: 4px;
-	height: 32px;
-}
-.sb-btn {
-	padding: 0;
-	font-size: .8rem;
-	height: 28px!important
-}
-.sb-color-setting {
-	width: 75px
-}
-.sb-picker {
-	position: relative;
-	height: 40px;
-	width: 40px;
-	padding: 0;
-	border: 0;
-	cursor: pointer
-}
 .pill-center {
 	position: absolute;
 	bottom: -.4rem;
@@ -120,17 +97,42 @@ body.darkMode .sb-menu, body.darkMode .sb-combat-menu  {
 	font-size: 0.75rem;
 	font-weight: 400
 }
+.sb-synergy-icon {
+	position: relative;
+	border-radius: 5px;
+	cursor: pointer;
+	height: 40px;
+	width: 88px;
+	margin: 4px
+}
+.sb-btn {
+	padding: 0;
+	font-size: .8rem;
+	height: 28px!important
+}
+.sb-color-setting {
+	width: 64px
+}
+.sb-picker {
+	position: relative;
+	height: 40px;
+	width: 40px;
+	padding: 0;
+	border: 0;
+	cursor: pointer
+}
+.sb-input {
+	margin: none;
+	padding: 4px;
+	height: 32px;
+	width: 64px
+}
 .sb-badge {
 	padding: .175em .4em;
 	font-size: 75%;
 	font-weight: 600;
 	white-space: nowrap;
 	border-radius: .25rem;
-}
-.poi-inline-icon {
-	position: relative;
-	height: 10px;
-	margin-bottom: 2px
 }
 .sb-icon-xs {
 	height: 20px;
@@ -174,15 +176,15 @@ body.darkMode .sb-menu, body.darkMode .sb-combat-menu  {
 .sb-font-2sm {
 	font-size: .775rem
 }
-.max-448px {
-	max-width: 448px
-}
 .sb-btn-sm {
 	min-width: 56px;
 	font-size: 0.75rem;
 }
 .min-4-icons {
 	min-width: 192px
+}
+.sb-110px {
+	width: 110px!important
 }
 .text-warning-disabled,body.darkMode .text-warning-disabled {
 	color: #e5ae67!important;
@@ -192,18 +194,10 @@ body.darkMode .sb-menu, body.darkMode .sb-combat-menu  {
 	white-space: pre-line;
 }
 @media(max-width: 767px) {
-	.sb-px-3 {
-		padding-left: 1rem;
-		padding-right: 1rem
-	}
 	.sb-category {
 		-ms-flex: 0 0 100%;
 		flex: 0 0 100%;
 		max-width: 100%
-	}
-	#combat-container .sb-px-3 {
-		padding-left: 0;
-		padding-right: 0
 	}
 }
 @media(min-width: 768px) {

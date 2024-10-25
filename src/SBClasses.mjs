@@ -1,9 +1,14 @@
-const { getResourceUrl, settings, characterStorage } = mod.getContext(
+const { getResourceUrl, settings } = mod.getContext(
 		import.meta),
 	generalSettings = settings.section('General'),
 	getSetting = generalSettings.get,
 	player = game.combat.player,
+	hasTotH = cloudManager.hasTotHEntitlementAndIsEnabled,
+	hasAoD = cloudManager.hasAoDEntitlementAndIsEnabled,
+	hasItA = cloudManager.hasItAEntitlementAndIsEnabled,
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
+	abyssalRealm = hasItA && game.realms.getObjectByID('melvorItA:Abyssal'),
+	synergyLocked = assets.getURI('assets/media/skills/summoning/synergy_locked.png'),
 	inactiveIcon = getResourceUrl('assets/inactive.png');
 
 // A modified version of Melvor's InfoIcon
@@ -104,7 +109,7 @@ class SkillBoostsSynergy extends SkillBoostsIconElement {
 		if (!game.summoning.isSynergyUnlocked(synergy)) {
 			this.synergyLocked = this.container.appendChild(createElement('img', {
 				className: 'synergy-locked d-none',
-				attributes: [['src', assets.getURI('assets/media/skills/summoning/synergy_locked.svg')]]
+				attributes: [['src', synergyLocked]]
 			}));
 		}
 		if (this.text)
@@ -168,7 +173,7 @@ class SBAgilitySelect extends HTMLElement {
 			if (obstacle === this.destroyed)
 				return;
 			let icon = new SkillBoostsIcon('', obstacle, obstacle.media, false);
-			skillBoosts.mainTooltipController.init(icon.container);
+			skillBoosts.MainTooltipController.init(icon.container);
 			icon.container.onclick = () => {
 				this.built = obstacle;
 				this.builtName.textContent = `${getLangString('MENU_TEXT_BUILD')} ${this.built.name}?`;
@@ -208,7 +213,7 @@ class SBAgilitySelect extends HTMLElement {
 		let fragment = new DocumentFragment();
 		this.iconArr.forEach((item) => {
 			let icon = new SkillBoostsIcon('Equipment', item, item.media);
-			skillBoosts.mainTooltipController.init(icon.container);
+			skillBoosts.MainTooltipController.init(icon.container);
 			fragment.append(icon);
 			icon.container.onclick = () => {
 				if (game.bank.getQty(item) !== 0) {
@@ -266,13 +271,20 @@ class SBAgilitySelect extends HTMLElement {
 			let levelReq = [new SkillLevelRequirement({ skillID: game.agility.id, level: obstacle.slot.level }, game)];
 			if (obstacle.abyssalLevel > 0)
 				levelReq.push(new AbyssalLevelRequirement({ skillID: game.agility.id, level: obstacle.slot.abyssalLevel }, game));
-				[...levelReq, ...obstacle.skillRequirements].forEach((requirement) => {
-				const textClass = game.checkRequirement(requirement, false) ? 'text-success' : 'text-danger';
-				let type = requirement.type === 'SkillLevel' ? 'MENU_TEXT_LEVEL' : 'MENU_TEXT_ABYSSAL_LEVEL';
-				let newReq = skillBoosts.createInlineRequirement(requirement.skill.media, templateLangString(type, { level: `${requirement.level}` }), textClass);
+
+			[...levelReq, ...obstacle.skillRequirements].forEach((requirement) => {
+				let textClass = game.checkRequirement(requirement) ? 'text-success' : 'text-danger',
+					type = requirement.type === 'SkillLevel' ? 'MENU_TEXT_LEVEL' : 'MENU_TEXT_ABYSSAL_LEVEL',
+					newReq = skillBoosts.createInlineRequirement(requirement.skill.media, templateLangString(type, { level: `${requirement.level}` }), textClass);
+
 				skillBoosts.createImageTooltip(newReq.children[0], requirement.skill.name);
 				requiresElem.append(newReq);
 			});
+			if (hasItA && obstacle.abyssalLevel >= 1 && !abyssalRealm.isUnlocked) {
+				let reqNode = skillBoosts.getItACompletionNode(true);
+				skillBoosts.createImageTooltip(reqNode.children[0], getLangString('DUNGEON_NAME_Into_The_Abyss'));
+				requiresElem.append(reqNode);
+			}
 		}
 		this.setPassives(obstacle, passivesElem, game.agility.getObstacleNegMult(obstacle));
 	}
@@ -285,304 +297,189 @@ class SBAgilitySelect extends HTMLElement {
 window.customElements.define('sb-agility-select', SBAgilitySelect);
 
 class SBColorSetting extends HTMLElement {
-	constructor() {
+	constructor(config) {
 		super();
+		this.config = config;
+		this.value = this.config.default;
 		this._content = new DocumentFragment();
-		this.parent = this._content.appendChild(createElement('div', { className: 'text-center' }));
 		this.warning = createElement('span', {
 			text: `${langString['SETTING_HEX_FORMAT'][setLang]} #rrggbb`,
-			className: 'd-none justify-content-center alert-danger'
+			className: 'd-none justify-content-center alert-danger mb-2'
 		});
 		this.container = createElement('div', {
 			className: 'row no-gutters text-center justify-content-around',
 		});
-		for (let i = 1; i < 6; i++) {
-			let setting = this.colorSettingElem(),
-				input = setting.querySelector('#input'),
-				picker = setting.querySelector('#SB-picker');
+
+		for (let i = 0; i < 5; i++) {
+			let { container, picker, input } = this.colorSettingElem(this.value[i]);
+
 			input.addEventListener('change', () => {
-				if (input.value[0] !== '#') {
+				if (input.value[0] !== '#' || input.value.length !== 7) {
 					this.warning.classList.replace('d-none', 'd-flex');
-					this.load();
+					input.value = getSetting('colorBgs')[i];
 					return;
 				}
+				picker.value = input.value;
+				this.value[i] = input.value;
+				skillBoosts.agilitySetting.updateAllBgs();
 				this.warning.classList.replace('d-flex', 'd-none');
-				this.save('#input');
 			});
 			picker.addEventListener('change', () => {
-				input.value = `${picker.value}`;
+				input.value = picker.value;
+				this.value[i] = picker.value;
+				skillBoosts.agilitySetting.updateAllBgs();
 				this.warning.classList.replace('d-flex', 'd-none');
-				this.save('#SB-picker');
 			});
-			this.container.append(setting);
-		};
-		this.parent.append(this.warning, this.container);
+			this.container.append(container);
+		}
+
+		this._content.append(this.warning, this.container);
 	}
 	connectedCallback() {
 		this.appendChild(this._content);
 	}
-	colorSettingElem() {
-		return createElement('div', {
-			className: 'sb-color-setting',
-			children: [
-				createElement('div', {
-					children: [
-						createElement('input', {
-							id: 'SB-picker',
-							className: 'btn-light sb-picker',
-							attributes: [['type', 'color']]
-						}),
-						createElement('input', {
-							id: 'input',
-							className: 'form-control form-control-sm text-center sb-input',
-							attributes: [['type', 'text']]
-						})
-					]
-				})
-			]
-		});
-	}
-	load() {
-		getSetting('colorBgs').forEach((value, i) => {
-			this.container.querySelectorAll('#SB-picker')[i].value = value;
-			this.container.querySelectorAll('#input')[i].value = value;
-		});
-	}
-	save(id) {
-		let values = [];
-		this.container.querySelectorAll(id).forEach((elem) => { values.push(elem.value); });
-		generalSettings.set('colorBgs', values);
-		this.load();
-		skillBoosts.updateBackgrounds(values);
-		agiCostSetting.updateBgs();
+	colorSettingElem(value) {
+		let container = createElement('div', { className: 'sb-color-setting' });
+		let picker = createElement('input', { id: 'SB-picker', className: 'btn-light sb-picker', attributes: [['type', 'color']], parent: container });
+		let input = createElement('input', { id: 'input', className: 'form-control form-control-sm text-center sb-input', attributes: [['type', 'text']], parent: container });
+		picker.value = value;
+		input.value = value;
+		return { container, picker, input };
 	}
 }
 window.customElements.define('sb-color-setting', SBColorSetting);
 
 class AgilityCostSetting extends HTMLElement {
-	constructor() {
+	constructor(config) {
 		super();
+		this.config = config;
 		this._content = new DocumentFragment();
-		this.parent = this._content.appendChild(createElement('div', { className: 'text-center' }));
-		this.items = ['melvorF:Agility_Skillcape'];
-		this.icons = new Map();
-		this.itemsContainer = createElement('div', { className: `row no-gutters justify-content-center` });
-		this.parent.append(this.itemsContainer);
+		this.label = createElement('label', { className: 'font-weight-normal text-center w-100', text: this.config.label, parent: this._content });
+		this.hint = createElement('small', { className: 'd-block', text: this.config.hint, parent: this.label });
+		this.iconContainer = createElement('div', { className: 'row no-gutters justify-content-center', parent: this._content });
 	}
 	connectedCallback() {
 		this.appendChild(this._content);
 	}
 	init() {
-		if (cloudManager.hasTotHEntitlementAndIsEnabled)
-			this.items.push('melvorTotH:Superior_Agility_Skillcape');
-		if (game.currentGamemode.id === 'melvorAoD:AncientRelics')
-			this.items.push('melvorAoD:Agility_Lesser_Relic');
-		this.items.forEach((itemID) => { this.createIcons(itemID), this.updateBgs(itemID, false); });
-	}
-	createIcons(itemID) {
-		let item = game.items.getObjectByID(itemID),
-			icon = new SkillBoostsIcon('Equipment', item, item.media, true);
-		icon.setTooltip(item.name);
-		skillBoosts.mainTooltipController.init(icon.container);
-		this.itemsContainer.append(icon);
-		icon.container.onclick = () => { this.updateBgs(itemID, true); };
-		this.icons.set(itemID, icon);
-	}
-	updateBgs(itemID, save) {
-		let items = skillBoosts.data.filteredItems.get('agi'),
-			icons = [this.icons.get(itemID)];
-		if (icons[0] === undefined)
-			icons = this.icons;
-		icons.forEach((icon) => {
-			if (items.includes(icon.item.id))
-				icon.setBg(getSetting('colorBgs')[save ? 2 : 0]);
-			else
-				icon.setBg(getSetting('colorBgs')[save ? 0 : 2]);
+		let lesserRelicDrops = game.woodcutting.rareDrops.filter(x => x.item.id.includes('_Lesser_Relic')),
+			items = ['melvorF:Agility_Skillcape'];
+
+		if (hasTotH)
+			items.push('melvorTotH:Superior_Agility_Skillcape');
+		if (lesserRelicDrops.some(x => x.gamemodes.includes(game.currentGamemode)))
+			items.push('melvorAoD:Agility_Lesser_Relic');
+
+		items.forEach(itemID => {
+			let item = game.items.getObjectByID(itemID),
+				icon = new SkillBoostsIcon('Equipment', item, item.media, true);
+
+			icon.setTooltip(item.name);
+			skillBoosts.MainTooltipController.init(icon.container);
+			icon.onclick = () => { this.save(icon), this.updateBg(icon) };
+
+			this.iconContainer.append(icon);
+			this.updateBg(icon);
 		});
-		if (save) {
-			items.includes(itemID) ? items.splice(items.indexOf(itemID), 1) : items.push(itemID);
-			skillBoosts.updateAllObstacles();
-			SBSave.save();
-		}
+	}
+	updateBg(icon) {
+		let backgroundColors = getSetting('colorBgs'),
+			bgColor = this.value.includes(icon.item.id) ? backgroundColors[0] : backgroundColors[2];
+
+		icon.setBg(bgColor);
+	}
+	save(icon) {
+		if (this.value.includes(icon.item.id))
+			this.value.splice(this.value.indexOf(icon.item.id), 1);
+		else
+			this.value.push(icon.item.id);
+	}
+	updateAllBgs() {
+		this.iconContainer.children.forEach(icon => this.updateBg(icon));
 	}
 }
 window.customElements.define('sb-agility-setting', AgilityCostSetting);
 
-// Credits to Psycast (Equipment Presents) for the following "SBSaving" system
-// https://mod.io/g/melvoridle/m/psy-equipment-presets
-// crc32
-class SBSaving {
+class SBCompactCheckboxGroup extends HTMLElement {
 	constructor() {
-		this.crcTable = [];
-		this.crcMap;
-		this.SAVE_VERSION = 2;
+		super();
+		this.checkboxes = [];
+		this._content = new DocumentFragment();
 	}
-	initAndLoad() {
-		this.makeCRCTable();
-		this.crcCreateMapID();
-		this.load();
-		delete this.crcMap.from;
+	connectedCallback() {
+		this.appendChild(this._content);
 	}
-	makeCRCTable() {
-		var c;
-		for (var n = 0; n < 256; n++) {
-			c = n;
-			for (var k = 0; k < 8; k++) {
-				c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
-			}
-			this.crcTable[n] = c;
-		}
+	init(config) {
+		let label = createElement('label', { className: 'font-weight-normal text-center w-100', text: config.label, parent: this._content });
+		let checkboxGroup = this._content.appendChild(createElement('div', { className: 'row no-gutters' }));
+
+		if (config.hint)
+			createElement('small', { className: 'd-block', text: config.hint, parent: label });
+
+		config.options.forEach((option, i) => {
+			let optName = `${config.name}[${i}]`,
+				optCheckbox = createElement('input', { id: optName, className: 'custom-control-input', attributes: [['type', 'checkbox'], ['name', optName]] }),
+				optLabel = createElement('label', { className: 'font-weight-normal custom-control-label ml-2', attributes: [['for', optName]], text: option.label }),
+				control = createElement('div', { className: 'custom-control custom-checkbox custom-control-md mb-1 pl-3 w-50', children: [optCheckbox, optLabel], });
+
+			optCheckbox.value = option.value;
+			optCheckbox.addEventListener('change', () => this.save(option.value));
+			this.checkboxes.push(optCheckbox);
+			checkboxGroup.appendChild(control);
+		});
 	}
-	crc32(str) {
-		var crc = 0 ^ (-1);
-		for (var i = 0; i < str.length; i++) {
-			crc = (crc >>> 8) ^ this.crcTable[(crc ^ str.charCodeAt(i)) & 0xFF];
-		}
-		return (crc ^ (-1)) >>> 0;
+	save(value) {
+		if (this.value.includes(value))
+			this.value.splice(this.value.indexOf(value), 1);
+		else
+			this.value.push(value);
+
+		if (!skillBoosts.menu)
+			return;
+		skillBoosts.getAllIcons().filter(x => x.category === value).forEach(icon => skillBoosts.menu.updateIcon(icon));
+		skillBoosts.renderQueue.menu = true;
 	}
-	crcCreateMapID() {
-		const crcStrings = [
-			...game.skills.allObjects,
-			...game.realms.allObjects,
-			...game.items.equipment.allObjects,
-			...game.items.potions.allObjects,
-			...game.agility.actions.allObjects,
-			...game.agility.pillars.allObjects,
-			...game.pets.allObjects,
-			...game.shop.purchases.allObjects,
-			...game.astrology.actions.allObjects,
-			...game.summoning.actions.allObjects,
-			...game.ancientRelics.allObjects
-		];
-		if (cloudManager.hasAoDEntitlementAndIsEnabled) {
-			game.cartography.worldMaps.forEach((map) => {
-				crcStrings.push(...map.pointsOfInterest.allObjects);
-			});
+}
+window.customElements.define('sb-checkbox-group', SBCompactCheckboxGroup);
+
+class SBRenderQueue {
+	constructor() {
+		this.equipment = {
+			bg: new Set(),
+			charge: new Set()
 		};
-		let mappedIDs = crcStrings.map(item => item.id);
-		mappedIDs.push('0', '1', 'mf', 'agi', 'Default Sorting');
-		game.summoning.synergies.forEach(({ summons }) => mappedIDs.push(`${summons[0].id}+${summons[1].id}`));
-		for (let i = 1; i < 16; i++) {
-			mappedIDs.push(`Skill_Boosts:${i}SB`);
-			if (i < 13)
-				mappedIDs.push(`Skill_Boosts:${i}-SB`);
-		}
-		const items = [...new Set(mappedIDs)]; // deduplicate
-		const crcFrom = new Map(items.map(item => [this.crc32(item), item]));
-		const crcTo = new Map(items.map(item => [item, this.crc32(item)]));
-
-		if (items.length !== crcFrom.size || items.length !== crcTo.size) {
-			console.warn(`[Skill Boosts] CRC Array length doesn't match Map sizes, possible duplicate!`);
-		}
-		this.crcMap = {
-			from: crcFrom,
-			to: crcTo
+		this.consumable = {
+			bg: new Set(),
+			qty: new Set()
 		};
-	};
-	readMapping(crc) {
-		if (crc === 0x0)
-			return null;
-
-		const item = this.crcMap.from.get(crc);
-		if (!item) {
-			//console.warn(`[Skill Boosts] Decoded CRC had no matching item: 0x${crc.toString(16)}`);
-			return null;
-		}
-		return item;
-	};
-	load() {
-		const compressedData = characterStorage.getItem('saveData');
-		if (compressedData)
-			this.decode(compressedData, skillBoosts.data);
-	}
-	save() {
-		const compressedData = this.encode(skillBoosts.data);
-		try {
-			characterStorage.setItem('saveData', compressedData);
-		} catch (e) {
-			notifyPlayer(game.combat, `[Skill Boosts]: ${e}`, 'danger');
-		}
-	}
-	decode(saveString, data) {
-		const reader = new SaveWriter('Read', 1);
-		try {
-			reader.setRawData(fflate.unzlibSync(fflate.strToU8(atob(saveString), true)).buffer);
-
-			let MAGIC = reader.getString();
-			if (MAGIC !== 'PLMV') {
-				console.error("[Skill Boosts] Invalid Preset Config Magic:", MAGIC.substr(0, 4));
-				return [];
-			}
-
-			let version = reader.getUint16();
-			if (version > this.SAVE_VERSION)
-				throw new Error('[Skill Boosts] Save version higher then script version.');
-
-			let len = reader.getUint16();
-			for (let i = 0; i < len; i++) {
-				let item = this.readMapping(reader.getUint32());
-				let lenSkill = reader.getUint16();
-				let skills = [];
-				for (let i = 0; i < lenSkill; i++) {
-					let skill = this.readMapping(reader.getUint32());
-					if (skill !== null)
-						skills.push(skill);
-				};
-				if (item !== null)
-					data.filteredItems.set(item, skills);
-			}
-			len = reader.getUint16();
-			for (let i = 0; i < len; i++) {
-				let skill = this.readMapping(reader.getUint32());
-				let state = this.readMapping(reader.getUint32());
-				if (skill !== null && state !== null)
-					data.menuStates.set(skill, state);
-			}
-			if (version >= 2) {
-				len = reader.getUint16();
-				for (let i = 0; i < len; i++) {
-					let skill = this.readMapping(reader.getUint32());
-					let realm = this.readMapping(reader.getUint32());
-					if (skill !== null && realm !== null)
-						data.realmStates.set(skill, realm);
-				}
-			}
-		} catch (_a) {
-			console.error("[Skill Boosts] Config Reader Error", _a);
-		}
-	}
-	encode(data) {
-		const writeUint32 = (value) => writer.writeUint32(this.crcMap.to.get(value) || 0);
-		let writer = new SaveWriter('Write', 128);
-
-		writer.writeString('PLMV');
-		writer.writeUint16(this.SAVE_VERSION);
-
-		writer.writeUint16(data.filteredItems.size);
-		data.filteredItems.forEach((skillArr, item) => {
-			writeUint32(item);
-			writer.writeUint16(skillArr.length);
-			skillArr.forEach((skill) => {
-				writeUint32(skill);
-			});
-		});
-
-		writer.writeUint16(data.menuStates.size);
-		data.menuStates.forEach((state, skill) => {
-			writeUint32(skill);
-			writeUint32(state);
-		});
-
-		writer.writeUint16(data.realmStates.size);
-		data.realmStates.forEach((realm, skill) => {
-			writeUint32(skill);
-			writeUint32(realm);
-		});
-
-		const rawSaveData = writer.getRawData();
-		const compressedData = fflate.strFromU8(fflate.zlibSync(new Uint8Array(rawSaveData)), true);
-		const saveString = btoa(compressedData);
-		return saveString;
+		this.obstacle = {
+			bg: new Set(),
+			active: new Set()
+		};
+		this.poi = {
+			bg: new Set(),
+			cost: new Set()
+		};
+		this.pet = {
+			bg: new Set()
+		};
+		this.purchase = {
+			bg: new Set()
+		};
+		this.constellation = {
+			bg: new Set()
+		};
+		this.synergy = {
+			bg: new Set(),
+			qty: new Set(),
+			locked: new Set()
+		};
+		this.relic = {
+			bg: new Set()
+		};
+		this.items = new Map();
+		this.currency = new Map();
+		this.menu = false;
 	}
 }
 
@@ -603,8 +500,5 @@ const langString = {
 		'tr': 'Biçim:',
 	},
 }
-let SBSave = new SBSaving();
-let customColorSetting = new SBColorSetting();
-let agiCostSetting = new AgilityCostSetting();
 
-export { SBSave, SkillBoostsIcon, SkillBoostsSynergy, SBAgilitySelect, customColorSetting, agiCostSetting };
+export { SkillBoostsIcon, SkillBoostsSynergy, SBAgilitySelect, SBRenderQueue, SBCompactCheckboxGroup, AgilityCostSetting, SBColorSetting };

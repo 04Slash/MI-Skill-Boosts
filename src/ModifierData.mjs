@@ -9,7 +9,8 @@ let noPreservation = ['melvorD:Attack', 'melvorD:Farming', 'melvorD:Township', '
 	isCombat = ['melvorD:Attack'],
 	isArtisan = ['melvorD:Cooking', 'melvorD:Smithing', 'melvorD:Fletching', 'melvorD:Crafting', 'melvorD:Runecrafting', 'melvorD:Herblore', 'melvorD:Summoning'],
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
-	abyssalRealm = cloudManager.hasItAEntitlementAndIsEnabled && game.realms.getObjectByID('melvorItA:Abyssal');
+	abyssalRealm = cloudManager.hasItAEntitlementAndIsEnabled && game.realms.getObjectByID('melvorItA:Abyssal'),
+	hasItemObstacle;
 
 function sortModdedSkill(data) {
 	if (data.noPreservation) noPreservation.push(data.skill.id);
@@ -22,6 +23,10 @@ function sortModdedSkill(data) {
 	if (data.noPrimaryResource) noConsumable.push(data.skill.id);
 	if (data.isCombat) isCombat.push(data.skill.id);
 	if (data.isArtisan) isArtisan.push(data.skill.id);
+}
+
+function checkAgilityCourses() {
+	hasItemObstacle = game.agility.actions.some(x => x.itemRewards.length > 0);
 }
 
 function getCommonModifiers(skillID) {
@@ -45,7 +50,7 @@ function getCommonModifiers(skillID) {
 	if (interval) modifiers.push('skillInterval', 'flatSkillInterval', 'halveSkillInterval');
 	if (preservation) modifiers.push('bypassGlobalPreservationChance', 'skillPreservationChance');
 	if (consumable) modifiers.push('consumablePreservationChance');
-	if (primaryResource) modifiers.push('flatBasePrimaryProductQuantity', 'flatBasePrimaryProductQuantityChance', 'basePrimaryProductQuantity', 'additionalPrimaryProductChance', 'additional2PrimaryProductChance', 'additional3PrimaryProductChance', 'additional5PrimaryProductChance', 'additional8PrimaryProductChance', 'flatAdditionalPrimaryProductQuantity');
+	if (primaryResource && (skillID !== 'melvorD:Agility' || hasItemObstacle)) modifiers.push('flatBasePrimaryProductQuantity', 'flatBasePrimaryProductQuantityChance', 'basePrimaryProductQuantity', 'additionalPrimaryProductChance', 'additional2PrimaryProductChance', 'additional3PrimaryProductChance', 'additional5PrimaryProductChance', 'additional8PrimaryProductChance', 'flatAdditionalPrimaryProductQuantity');
 	if (artisan) modifiers.push('skillCostReduction');
 
 	if (!game.currentGamemode.disablePreservation && preservation)
@@ -145,4 +150,4 @@ function getAbyssalModifiers(skillID) {
 	return modifiers;
 }
 
-export { noPreservation, sortModdedSkill, getCommonModifiers, getMelvorModifiers, getAbyssalModifiers };
+export { noPreservation, checkAgilityCourses, sortModdedSkill, getCommonModifiers, getMelvorModifiers, getAbyssalModifiers };

@@ -8,6 +8,7 @@ const { patch, settings, onModsLoaded } = mod.getContext(
 	},
 	addToRenderQueue = (item, category, types) => types.forEach((type) => skillBoosts.renderQueue[category][type].add(item)),
 	getCategoryIcons = (category) => skillBoosts.getCategoryIcons(category),
+	shouldRealmSwap = () => skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms'),
 	getSetting = settings.section('General').get,
 	hasAoD = cloudManager.hasAoDEntitlementAndIsEnabled,
 	hasItA = cloudManager.hasItAEntitlementAndIsEnabled,
@@ -75,6 +76,9 @@ if (hasAoD) {
 game.combat._events.on('dungeonCompleted', e => {
 	getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(x => x.dungeon === e.dungeon)).forEach(purchase => {
 		addToRenderQueue(purchase, 'purchase', ['bg']);
+	});
+	getCategoryIcons('Obstacle').filter(x => x.abyssalLevel === 1).forEach(obstacle => {
+		addToRenderQueue(obstacle, 'obstacle', ['bg']);
 	});
 });
 
@@ -278,7 +282,7 @@ patch(Agility, 'addSingleObstacleBuildCost').after(function(_, obstacle, costs) 
 			return;
 		skillBoosts.agiCosts = false;
 
-		let agiSetting = skillBoosts.data.filteredItems.get('agi');
+		let agiSetting = getSetting('agilityCost');
 		if (agiSetting.length === 0 || obstacle.realm !== melvorRealm)
 			return;
 
@@ -314,7 +318,7 @@ patch(Agility, 'addSinglePillarBuildCost').after(function(_, pillar, costs) {
 			return;
 		skillBoosts.agiCosts = false;
 
-		let agiSetting = skillBoosts.data.filteredItems.get('agi');
+		let agiSetting = getSetting('agilityCost');
 		if (agiSetting.length === 0 || pillar.realm !== melvorRealm)
 			return;
 
@@ -490,6 +494,7 @@ patch(Skill, 'locateAncientRelic').after(function(_, relicSet, relic) {
 });
 
 
+// Automatic Realm Swapping Patches
 // Swap Realms for Artisan Skills
 patch(CategoryMenuOptionElement, 'setOption').replace(function(o, option, callbackFn) {
 	const onLinkClick = () => {
@@ -500,8 +505,8 @@ patch(CategoryMenuOptionElement, 'setOption').replace(function(o, option, callba
 			else
 				this.unhighlight();
 		}
-		if (option.skill !== undefined && option.realm !== undefined && skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms'))
-			skillBoosts.onRealmChange(option.realm.id);
+		if (option.skill && skillBoosts.data.menus.has(option.skill.id) && option.realm && shouldRealmSwap())
+			skillBoosts.onRealmChange(option.realm.id, undefined, skillBoosts.data.menus.get(option.skill.id), option.skill.id);
 	};
 	this.link.onclick = onLinkClick;
 	this.image.src = option.media;
@@ -509,39 +514,39 @@ patch(CategoryMenuOptionElement, 'setOption').replace(function(o, option, callba
 });
 // Swap Realms for Firemaking
 patch(Firemaking, 'selectLog').after(function(o, recipe) {
-	if (recipe.realm !== undefined && skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms'))
-		skillBoosts.onRealmChange(recipe.realm.id);
+	if (recipe.realm && shouldRealmSwap())
+		skillBoosts.onRealmChange(recipe.realm.id, undefined, skillBoosts.data.menus.get(this.id), this.id);
 });
 // Swap Realms for Township
 patch(Township, 'setTownBiome').after(function(o, biome, jumpTo) {
-	if (skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms')) {
+	if (shouldRealmSwap()) {
 		let realm = biome.abyssalTier ? abyssalRealm : melvorRealm;
 		if (realm instanceof Realm)
-			skillBoosts.onRealmChange(realm.id);
+			skillBoosts.onRealmChange(realm.id, undefined, skillBoosts.data.menus.get(this.id), this.id);
 	}
 });
 // Swap Realms for Cooking
 patch(Cooking, 'onRecipeSelectionOpenClick').after(function(o, category, realm) {
-	if (skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms'))
-		skillBoosts.onRealmChange(realm.id);
+	if (shouldRealmSwap())
+		skillBoosts.onRealmChange(realm.id, undefined, skillBoosts.data.menus.get(this.id), this.id);
 });
 // Swap Realms for Farming
 patch(FarmingSeedSelectElement, 'setSeedSelection').after(function(o, category, game, realm, plot) {
-	if (skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms')) {
+	if (shouldRealmSwap()) {
 		const realmsWithMasteryInCategory = game.farming.getRealmsWithMasteryInCategory(category);
 		if (realmsWithMasteryInCategory.length > 0 && !realmsWithMasteryInCategory.includes(realm))
 			realm = realmsWithMasteryInCategory[0];
-		skillBoosts.onRealmChange(realm.id);
+		skillBoosts.onRealmChange(realm.id, undefined, skillBoosts.data.menus.get(game.farming.id), game.farming.id);
 	}
 });
 // Change the menu's realm when the skill's realm is changed
 patch(Skill, 'selectRealm').after(function(o, realm) {
-	if (skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms') && skillBoosts.data.realms.includes(realm) && skillBoosts.data.menus.has(this.id))
+	if (shouldRealmSwap() && skillBoosts.data.menus.has(this.id))
 		skillBoosts.onRealmChange(realm.id, undefined, skillBoosts.data.menus.get(this.id), this.id);
 });
 // Swap realm when weapon damage type changes
 function swapCombatRealm(item) {
-	if (skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms')) {
+	if (shouldRealmSwap()) {
 		let realmID = (!item || item.damageType === game.normalDamage) ? melvorRealm.id : abyssalRealm.id;
 		skillBoosts.onRealmChange(realmID, undefined, skillBoosts.data.menus.get(game.attack.id), game.attack.id);
 		skillBoosts.onRealmChange(realmID, undefined, skillBoosts.data.menus.get(game.thieving.id), game.thieving.id);
