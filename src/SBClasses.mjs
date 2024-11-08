@@ -33,17 +33,14 @@ class SkillBoostsIconElement extends HTMLElement {
 	connectedCallback() {
 		this.appendChild(this._content);
 	}
-	setText(qty, dec = 2) {
-		this.text.textContent = formatNumber(qty, dec);
-	}
-	destroy() {
-		this.remove();
-	}
 	hide() {
 		hideElement(this);
 	}
 	show() {
 		showElement(this);
+	}
+	setText(qty, dec = 2) {
+		this.text.textContent = formatNumber(qty, dec);
 	}
 	setBg(hexColor) {
 		if (this.bgColor === hexColor)
@@ -56,6 +53,9 @@ class SkillBoostsIconElement extends HTMLElement {
 			return;
 		this.text.classList.remove('bg-secondary', 'bg-warning', 'bg-danger');
 		this.text.classList.add(style);
+	}
+	setOpacity(opacity) {
+		this.style.opacity = opacity;
 	}
 }
 
@@ -153,7 +153,7 @@ class SBAgilitySelect extends HTMLElement {
 			showElement(this.destroyedContainer);
 		}
 		if (this.built === this.destroyed)
-			hideElements([this.builtContainer, this.destroyedContainer])
+			hideElements([this.builtContainer, this.destroyedContainer]);
 		this.built instanceof AgilityObstacle ? this.setObstacles() : this.setPillars();
 
 		if (this.built.realm === melvorRealm) {
@@ -211,7 +211,7 @@ class SBAgilitySelect extends HTMLElement {
 	}
 	costReductionItems() {
 		let fragment = new DocumentFragment();
-		this.iconArr.forEach((item) => {
+		this.iconArr.forEach(item => {
 			let icon = new SkillBoostsIcon('Equipment', item, item.media);
 			skillBoosts.MainTooltipController.init(icon.container);
 			fragment.append(icon);
@@ -272,7 +272,7 @@ class SBAgilitySelect extends HTMLElement {
 			if (obstacle.abyssalLevel > 0)
 				levelReq.push(new AbyssalLevelRequirement({ skillID: game.agility.id, level: obstacle.slot.abyssalLevel }, game));
 
-			[...levelReq, ...obstacle.skillRequirements].forEach((requirement) => {
+			[...levelReq, ...obstacle.skillRequirements].forEach(requirement => {
 				let textClass = game.checkRequirement(requirement) ? 'text-success' : 'text-danger',
 					type = requirement.type === 'SkillLevel' ? 'MENU_TEXT_LEVEL' : 'MENU_TEXT_ABYSSAL_LEVEL',
 					newReq = skillBoosts.createInlineRequirement(requirement.skill.media, templateLangString(type, { level: `${requirement.level}` }), textClass);
@@ -300,7 +300,7 @@ class SBColorSetting extends HTMLElement {
 	constructor(config) {
 		super();
 		this.config = config;
-		this.value = this.config.default;
+		this.value = config.default;
 		this._content = new DocumentFragment();
 		this.warning = createElement('span', {
 			text: `${langString['SETTING_HEX_FORMAT'][setLang]} #rrggbb`,
@@ -353,6 +353,7 @@ class AgilityCostSetting extends HTMLElement {
 	constructor(config) {
 		super();
 		this.config = config;
+		this.value = config.default;
 		this._content = new DocumentFragment();
 		this.label = createElement('label', { className: 'font-weight-normal text-center w-100', text: this.config.label, parent: this._content });
 		this.hint = createElement('small', { className: 'd-block', text: this.config.hint, parent: this.label });
@@ -376,7 +377,7 @@ class AgilityCostSetting extends HTMLElement {
 
 			icon.setTooltip(item.name);
 			skillBoosts.MainTooltipController.init(icon.container);
-			icon.onclick = () => { this.save(icon), this.updateBg(icon) };
+			icon.onclick = () => { this.save(icon), this.updateBg(icon); };
 
 			this.iconContainer.append(icon);
 			this.updateBg(icon);
@@ -499,6 +500,6 @@ const langString = {
 		'ru': 'Формат:',
 		'tr': 'Biçim:',
 	},
-}
+};
 
 export { SkillBoostsIcon, SkillBoostsSynergy, SBAgilitySelect, SBRenderQueue, SBCompactCheckboxGroup, AgilityCostSetting, SBColorSetting };

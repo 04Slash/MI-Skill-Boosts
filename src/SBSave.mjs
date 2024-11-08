@@ -53,7 +53,7 @@ class SBSave {
 		this.crcMap = {
 			from: crcFrom,
 			to: crcTo
-		}
+		};
 	}
 	readMapping(crc) {
 		if (crc === 0x0)
@@ -165,7 +165,7 @@ class SBSave {
 							let fam1 = reader.getNamespacedObjectId();
 							let fam2 = reader.getNamespacedObjectId();
 							if (fam1 != undefined && fam2 != undefined)
-								item = `${fam1}+${fam2}`
+								item = `${fam1}+${fam2}`;
 						} else
 							item = reader.getNamespacedObjectId();
 

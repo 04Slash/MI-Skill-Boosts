@@ -1,4 +1,4 @@
-const { patch, settings, onModsLoaded } = mod.getContext(
+const { patch, settings } = mod.getContext(
 		import.meta),
 	player = game.combat.player,
 	getSynergy = (set) => {
@@ -6,9 +6,10 @@ const { patch, settings, onModsLoaded } = mod.getContext(
 			return;
 		return game.summoning.getSynergy(set.getItemInSlot('melvorD:Summon1'), set.getItemInSlot('melvorD:Summon2'));
 	},
-	addToRenderQueue = (item, category, types) => types.forEach((type) => skillBoosts.renderQueue[category][type].add(item)),
+	addToRenderQueue = (item, category, types) => types.forEach(type => skillBoosts.renderQueue[category][type].add(item)),
 	getCategoryIcons = (category) => skillBoosts.getCategoryIcons(category),
 	shouldRealmSwap = () => skillBoosts.data.realms.length >= 3 && getSetting('autoSwapRealms'),
+	isBetween = (value, oldVal, newVal) => oldVal <= value && newVal >= value,
 	getSetting = settings.section('General').get,
 	hasAoD = cloudManager.hasAoDEntitlementAndIsEnabled,
 	hasItA = cloudManager.hasItAEntitlementAndIsEnabled,
@@ -18,7 +19,6 @@ const { patch, settings, onModsLoaded } = mod.getContext(
 let oldEquipmentSet = player.selectedEquipmentSet,
 	destroyedObstacles = [],
 	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, isRendering, previousSynergy, prevMarkLevel;
-
 
 // Equipment Events
 // Update after item equipped
@@ -72,19 +72,30 @@ if (hasAoD) {
 }
 
 // Misc Events
-// Update Shop Requirements on Dungeon Completion
+// Update Shop Purchases on Dungeon Completion
 game.combat._events.on('dungeonCompleted', e => {
 	getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(x => x.dungeon === e.dungeon)).forEach(purchase => {
 		addToRenderQueue(purchase, 'purchase', ['bg']);
 	});
-	getCategoryIcons('Obstacle').filter(x => x.abyssalLevel === 1).forEach(obstacle => {
-		addToRenderQueue(obstacle, 'obstacle', ['bg']);
-	});
+	if (hasItA && e.dungeon === game.dungeons.getObjectByID('melvorItA:Into_The_Abyss')) {
+		getCategoryIcons('Obstacle').filter(x => x.abyssalLevel === 1).forEach(obstacle => {
+			addToRenderQueue(obstacle, 'obstacle', ['bg']);
+		});
+	}
 });
 
-// Update Shop Requirements on Abyss Completion
-game.combat._events.on('abyssDepthCompleted', e => {
-	getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(x => x.depth === e.depth)).forEach(purchase => {
+// Update Shop Purchases on Abyss Completion
+if (hasItA) {
+	game.combat._events.on('abyssDepthCompleted', e => {
+		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(x => x.depth === e.depth)).forEach(purchase => {
+			addToRenderQueue(purchase, 'purchase', ['bg']);
+		});
+	});
+}
+
+// Update Shop Purchases on Slayer Task Completion
+game.combat.slayerTask.on('taskCompleted', e => {
+	getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(x => x.category === e.category && isBetween(e.category.tasksCompleted, e.oldCount, e.newCount))).forEach(purchase => {
 		addToRenderQueue(purchase, 'purchase', ['bg']);
 	});
 });
@@ -96,7 +107,7 @@ game.township.on('buildingCountChanged', e => {
 	});
 });
 
-// Update Purchases with Museum Donation requirements
+// Update Purchases on Museum Item Donations
 if (hasAoD) {
 	game.archaeology.on('itemDonated', e => {
 		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.count === e.newCount)).forEach(purchase => {
@@ -106,46 +117,49 @@ if (hasAoD) {
 }
 
 
+export function addEmitters() {
+	// Update skill actions on level up
+	let levels = hasItA ? ['level', 'abyssalLevel'] : ['level'];
+	skillBoosts.data.skills.forEach(skill => {
+		levels.forEach(lvl => {
+			if (skill[lvl] >= skill[`max${lvl[0].toUpperCase() + lvl.slice(1)}Cap`])
+				return;
 
-// Update items with Level Requirements
-[game.woodcutting, game.fishing, game.firemaking, game.cooking, game.mining, game.smithing, game.agility, game.cartography, game.archaeology].forEach(skill => {
-	if (skill === undefined) return;
-	skill.on('levelChanged', e => {
-		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.skill === e.skill && e.oldLevel < y.level && e.newLevel >= y.level)).forEach(purchase => {
-			addToRenderQueue(purchase, 'purchase', ['bg']);
-		});
-	});
-});
-[game.slayer, game.woodcutting, game.fishing, game.harvesting].forEach((skill) => {
-	if (skill === undefined) return;
-	skill.on('abyssalLevelChanged', e => {
-		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.skill === e.skill && e.oldLevel < y.abyssalLevel && e.newLevel >= y.abyssalLevel)).forEach(purchase => {
-			addToRenderQueue(purchase, 'purchase', ['bg']);
-		});
-	});
-});
-
-export function addLevelChangeEmitters() {
-	skillBoosts.data.skills.forEach((skill) => {
-		['level', 'abyssalLevel'].forEach(lvl => {
-			let ucLvl = lvl.charAt(0).toUpperCase() + lvl.slice(1);
-
-			if (skill === game.agility && skill[ucLvl] < skill[`max${ucLvl}Cap`]) {
+			if (skill === game.agility) {
 				skill.on(`${lvl}Changed`, e => {
-					getCategoryIcons('Obstacle').filter(x => x.slot[lvl] === e.newlevel).forEach(obstacle => addToRenderQueue(obstacle, 'obstacle', ['bg']));
+					getCategoryIcons('Obstacle').filter(x => isBetween(x.slot[lvl], e.oldLevel, e.newLevel)).forEach(obstacle => addToRenderQueue(obstacle, 'obstacle', ['bg']));
 				});
-			} else if (skill[lvl] < skill[`max${ucLvl}Cap`]) {
+			} else {
 				skill.on(`${lvl}Changed`, e => {
-					getCategoryIcons('Obstacle').filter(x => x.skillRequirements && x.skillRequirements.some(y => y.skill === e.skill && e.oldLevel < y[lvl] && e.newLevel >= y[lvl])).forEach(obstacle => {
+					getCategoryIcons('Obstacle').filter(x => x.skillRequirements && x.skillRequirements.some(y => y.skill === e.skill && isBetween(y[lvl], e.oldLevel, e.newLevel))).forEach(obstacle => {
 						addToRenderQueue(obstacle, 'obstacle', ['bg']);
 					});
 				});
 			}
-			if (skill === game.astrology && skill[lvl] < skill[`max${ucLvl}Cap`]) {
+
+			if (skill === game.astrology) {
 				skill.on(`${lvl}Changed`, e => {
-					getCategoryIcons('Constellation').filter(x => x[lvl] === e.newLevel).forEach(constellation => { addToRenderQueue(constellation, 'constellation', ['bg']); });
+					getCategoryIcons('Constellation').filter(x => isBetween(x[lvl], e.oldLevel, e.newLevel)).forEach(constellation => addToRenderQueue(constellation, 'constellation', ['bg']));
 				});
 			}
+		});
+	});
+
+	// Update purchases with skill Requirements
+	let skillsWithPurchases = new Map();
+	skillBoosts.getAllIcons().filter(x => x.category === 'Purchase').forEach(icon => {
+		icon.item.purchaseRequirements.forEach(requirement => {
+			if (requirement.skill)
+				skillBoosts.addValueToMap(skillsWithPurchases, requirement.skill, (requirement.type === 'AbyssalLevel' ? 'abyssalLevelChanged' : 'levelChanged'));
+		});
+	});
+	skillsWithPurchases.forEach((emitters, skill) => {
+		emitters.forEach(lvlEmitter => {
+			skill.on(lvlEmitter, e => {
+				getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.skill === e.skill && isBetween(y.level, e.oldLevel, e.newLevel))).forEach(purchase => {
+					addToRenderQueue(purchase, 'purchase', ['bg']);
+				});
+			});
 		});
 	});
 }
@@ -168,8 +182,11 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 				return;
 			let synergy = getSynergy(eSet.equipment);
 			eSet.equipment.equippedArray.forEach(slot => {
+				if (slot.slot.id === 'melvorD:Weapon')
+					swapCombatRealm(slot.item);
 				if (slot.isEmpty)
 					return;
+
 				if (['melvorD:Consumable', 'melvorD:Summon1', 'melvorD:Summon2'].includes(slot.id))
 					addToRenderQueue(slot.item, 'consumable', ['bg', 'qty']);
 				else
@@ -177,9 +194,6 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 
 				if (synergy && synergy.summons.some(x => x.product === slot.item))
 					addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
-
-				if (slot.item instanceof WeaponItem)
-					swapCombatRealm(slot.item);
 			});
 		});
 		skillBoosts.render();
@@ -270,7 +284,8 @@ patch(PotionManager, 'removePotion').after(function(o, skill, loadPotions) {
 
 
 // POI Patches
-patch(Cartography, 'goToWorldMapOnClick').after(function(_, poi) { skillBoosts.updateAllPOIs(); });
+if (hasAoD)
+	patch(Cartography, 'goToWorldMapOnClick').after(function(_, poi) { skillBoosts.updateAllPOIs(); });
 
 
 
@@ -355,7 +370,7 @@ patch(Agility, 'buildObstacle').after(function(_, obstacle) {
 // Grab the destroyed obstacle then update it after
 patch(Agility, 'destroyObstacle').before(function(category) {
 	try {
-		this.courses.forEach((course) => {
+		this.courses.forEach(course => {
 			if (course.builtObstacles.has(category))
 				destroyedObstacles.push(course.builtObstacles.get(category));
 		});
@@ -399,7 +414,7 @@ patch(Agility, 'buildPillar').after(function(_, pillar) {
 });
 patch(Agility, 'destroyPillar').before(function(category) {
 	try {
-		this.courses.forEach((course) => {
+		this.courses.forEach(course => {
 			if (course.builtPillars.has(category))
 				destroyedObstacles.push(course.builtPillars.get(category));
 		});
@@ -447,7 +462,7 @@ patch(ShopMenu, 'updateItemPostPurchase').after(function(_, purchase) {
 
 
 // Update Constellations
-['upgradeStandardModifier', 'upgradeUniqueModifier', 'upgradeAbyssalModifier'].forEach((func) => {
+['upgradeStandardModifier', 'upgradeUniqueModifier', 'upgradeAbyssalModifier'].forEach(func => {
 	patch(Astrology, func).after(function(_, constellation, modID) {
 		if (game.astrology.isConstellationComplete(constellation))
 			skillBoosts.removeIcon(constellation);
@@ -547,7 +562,7 @@ patch(Skill, 'selectRealm').after(function(o, realm) {
 // Swap realm when weapon damage type changes
 function swapCombatRealm(item) {
 	if (shouldRealmSwap()) {
-		let realmID = (!item || item.damageType === game.normalDamage) ? melvorRealm.id : abyssalRealm.id;
+		let realmID = (item && item.damageType === game.damageTypes.getObjectByID('melvorItA:Abyssal')) ? abyssalRealm.id : melvorRealm.id;
 		skillBoosts.onRealmChange(realmID, undefined, skillBoosts.data.menus.get(game.attack.id), game.attack.id);
 		skillBoosts.onRealmChange(realmID, undefined, skillBoosts.data.menus.get(game.thieving.id), game.thieving.id);
 	}
@@ -556,7 +571,7 @@ function swapCombatRealm(item) {
 
 
 //Update Purchase, Obstacle, and POI bgs on currency change
-['add', 'remove', 'set'].forEach((func) => {
+['add', 'remove', 'set'].forEach(func => {
 	patch(Currency, func).after(function(_, amount) {
 		if (this === game.raidCoins)
 			return;
@@ -564,7 +579,7 @@ function swapCombatRealm(item) {
 	});
 });
 // Update on Item gain
-['addItem', 'removeItemQuantity'].forEach((func) => {
+['addItem', 'removeItemQuantity'].forEach(func => {
 	patch(Bank, func).after(function(success, item, quantity) {
 		if (func === 'removeItemQuantity' && quantity > 0)
 			success = true;
@@ -588,20 +603,19 @@ function updateCurrency() {
 		getCategoryIcons('Obstacle').forEach(obstacle => {
 			let costs = skillBoosts.getObstacleCost(obstacle, true)._currencies.get(currency);
 			if (!costs) return;
-			if (currency.amount >= costs - qty && currency.amount <= costs + qty)
+			if (isBetween(currency.amount, costs - qty, costs + qty))
 				addToRenderQueue(obstacle, 'obstacle', ['bg']);
 		});
 		getCategoryIcons('Purchase').forEach(purchase => {
 			let costs = purchase.costs.currencies.find(x => x.currency === currency);
 			if (!costs) return;
-			if (currency.amount >= costs.cost - qty && currency.amount <= costs.cost + qty) {
+			if (isBetween(currency.amount, costs.cost - qty, costs.cost + qty))
 				addToRenderQueue(purchase, 'purchase', ['bg']);
-			}
 		});
 		getCategoryIcons('POI').forEach(poi => {
 			let costs = skillBoosts.getTravelCosts(poi)._currencies.get(currency);
 			if (!costs) return;
-			if (currency.amount >= costs - qty && currency.amount <= costs + qty)
+			if (isBetween(currency.amount, costs - qty, costs + qty) || isBetween(currency.amount, costs + qty, costs - qty))
 				addToRenderQueue(poi, 'poi', ['bg']);
 		});
 	});

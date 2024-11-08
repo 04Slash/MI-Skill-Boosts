@@ -35,7 +35,7 @@ class QueueRunner {
 				element.decoding = 'async';
 				element.src = src;
 				await element.decode();
-			} catch { }
+			} catch {}
 
 			setTimeout(() => this.load());
 		} else {

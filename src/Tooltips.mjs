@@ -191,7 +191,7 @@ class Tooltip extends HTMLElement {
 
 		computePosition(anchor || element, this._tooltip, {
 			placement: (this.id === 'Main' ? 'top' : 'bottom'),
-			middleware: [offset(this.id === 'Main' ? 8 : -8), flip(), shift({ padding: 5 }), arrow({ element: this._arrow })]
+			middleware: [offset(this.id === 'Main' ? 9 : -9), flip(), shift({ padding: 5 }), arrow({ element: this._arrow })]
 		}).then(({ x, y, placement, middlewareData }) => {
 			Object.assign(this._tooltip.style, {
 				left: `${x}px`,
