@@ -1,5 +1,7 @@
-const { getResourceUrl, settings } = mod.getContext(
-		import.meta),
+const { getResourceUrl, settings } = mod.getContext('Skill_Boosts'),
+	createImgNode = (src, cls) => {
+		return createElement('img', { className: cls, attributes: [['src', src]] });
+	},
 	generalSettings = settings.section('General'),
 	getSetting = generalSettings.get,
 	player = game.combat.player,
@@ -8,8 +10,8 @@ const { getResourceUrl, settings } = mod.getContext(
 	hasItA = cloudManager.hasItAEntitlementAndIsEnabled,
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 	abyssalRealm = hasItA && game.realms.getObjectByID('melvorItA:Abyssal'),
-	synergyLocked = assets.getURI('assets/media/skills/summoning/synergy_locked.png'),
-	inactiveIcon = getResourceUrl('assets/inactive.png');
+	synergyLockedIcon = createImgNode(assets.getURI('assets/media/skills/summoning/synergy_locked.png'), 'synergy-locked d-none'),
+	inactiveIcon = createImgNode(getResourceUrl('assets/inactive.png'), 'sb-inactive d-none');
 
 // A modified version of Melvor's InfoIcon
 class SkillBoostsIconElement extends HTMLElement {
@@ -19,16 +21,9 @@ class SkillBoostsIconElement extends HTMLElement {
 		this.category = category;
 		this._content = new DocumentFragment();
 		this.container = this._content.appendChild(createElement('div', { attributes: [['data-sbMainTooltip', '']] }));
-		if ((item instanceof EquipmentItem && this.item.validSlots.length > 2) || ['Obstacle', 'FillerObstacle', 'Clone', 'POI'].includes(this.category))
+
+		if ((item instanceof EquipmentItem && this.item.validSlots.length >= 2) || ['Obstacle', 'FillerObstacle', 'POI'].includes(this.category))
 			this.container.setAttribute('data-sbAltTooltip', '');
-		if (['Consumable', 'POI', 'Astrology', 'Synergy'].includes(this.category) || this.item.consumesChargesOn) {
-			this.text = createElement('div', {
-				className: `pill-center`,
-			}).appendChild(createElement('small', {
-				className: `badge-pill bg-secondary`,
-				text: 0
-			}));
-		}
 	}
 	connectedCallback() {
 		this.appendChild(this._content);
@@ -39,20 +34,35 @@ class SkillBoostsIconElement extends HTMLElement {
 	show() {
 		showElement(this);
 	}
-	setText(qty, dec = 2) {
-		this.text.textContent = formatNumber(qty, dec);
+	getDecimals(val) {
+		let decimals = 2;
+		if (`${val}`.length % 3 === 0)
+			decimals = 1;
+		return decimals;
 	}
-	setBg(hexColor) {
-		if (this.bgColor === hexColor)
-			return;
-		this.bgColor = hexColor; // Value is auto converted to rbg so save the Hex color
-		this.container.style.backgroundColor = hexColor;
+	createText() {
+		this.text = this.container.appendChild(createElement('div', {
+			className: 'pill-center',
+		})).appendChild(createElement('small', {
+			className: 'badge-pill bg-secondary',
+			text: 0
+		}));
 	}
-	setPillbox(style) {
-		if (this.text.className.includes(style))
+	setText(qty) {
+		this.text.textContent = formatNumber(qty, this.getDecimals(qty));
+	}
+	setBg(newColor) {
+		if (this.bgColor === newColor)
 			return;
-		this.text.classList.remove('bg-secondary', 'bg-warning', 'bg-danger');
-		this.text.classList.add(style);
+		this.container.classList.replace(this.bgColor, newColor);
+		this.bgColor = newColor;
+		this.hasRedBg = this.bgColor === 'sb-red-bg';
+	}
+	setPillbox(newColor) {
+		if (this.pillColor === newColor)
+			return;
+		this.text.classList.replace(this.pillColor, newColor);
+		this.pillColor = newColor;
 	}
 	setOpacity(opacity) {
 		this.style.opacity = opacity;
@@ -63,7 +73,9 @@ class SkillBoostsIcon extends SkillBoostsIconElement {
 	constructor(category, item, media, basicTooltip = false, size = 40) {
 		super(category, item);
 		this.basicTooltip = basicTooltip;
-		this.container.className = `sb-icon m-1 resize-${size}`;
+		this.bgColor = 'sb-default-bg';
+		this.pillColor = 'bg-secondary';
+		this.container.className = `sb-icon m-1 resize-${size} ${this.bgColor}`;
 		this.image = this.container.appendChild(createElement('img', { className: `p-1 resize-${size}` }));
 
 		if (this.category === 'Relic')
@@ -75,10 +87,10 @@ class SkillBoostsIcon extends SkillBoostsIconElement {
 			this.setImage(media);
 
 		if (this.category === 'Obstacle')
-			this.inactiveIcon = this.container.appendChild(createElement('img', { className: 'sb-inactive d-none', attributes: [['src', inactiveIcon]] }));
+			this.inactiveIcon = this.container.appendChild(inactiveIcon.cloneNode());
 
-		if (this.text)
-			this.container.append(this.text.parentElement);
+		if (['Consumable', 'POI', 'Astrology'].includes(this.category) || this.item.consumesChargesOn)
+			this.createText();
 	}
 	setImage(media) {
 		this.image.src = media;
@@ -92,35 +104,69 @@ window.customElements.define('skillboosts-icon', SkillBoostsIcon);
 class SkillBoostsSynergy extends SkillBoostsIconElement {
 	constructor(category, synergy) {
 		super(category, synergy);
-		this.container.className = `sb-synergy-icon`;
-		this.iconContainer = this.container.appendChild(createElement('div', {
-			className: `d-inline-flex`,
+		this.bgColor = ['sb-default-bg', 'sb-default-bg'];
+		this.pillColor = ['bg-secondary', 'bg-secondary'];
+		this.container.className = 'sb-double-icon';
+		this.iconContainers = this.container.appendChild(createElement('div', {
+			className: 'sb-synergy d-inline-flex',
 		}));
-		this.summon1Image = this.iconContainer.appendChild(createElement('div', {
-			className: `mr-1`,
+
+		this.iconContainer0 = this.iconContainers.appendChild(createElement('div', {
+			className: `${this.bgColor[0]}`
+		}));
+		this.summon0Media = this.iconContainer0.appendChild(createElement('div', {
+			className: 'mr-1',
 		})).appendChild(createElement('img', {
-			className: `p-1 resize-40`,
+			className: 'p-1 resize-40'
 		}));
-		this.summon2Image = this.iconContainer.appendChild(createElement('div', {
-			className: `ml-1`,
+
+		this.iconContainer1 = this.iconContainers.appendChild(createElement('div', {
+			className: `${this.bgColor[1]}`
+		}));
+		this.summon1Media = this.iconContainer1.appendChild(createElement('div', {
+			className: 'ml-1',
 		})).appendChild(createElement('img', {
-			className: `p-1 resize-40`,
+			className: 'p-1 resize-40'
 		}));
-		if (!game.summoning.isSynergyUnlocked(synergy)) {
-			this.synergyLocked = this.container.appendChild(createElement('img', {
-				className: 'synergy-locked d-none',
-				attributes: [['src', synergyLocked]]
-			}));
-		}
-		if (this.text)
-			this.container.append(this.text.parentElement);
+
+		if (!game.summoning.isSynergyUnlocked(this.item))
+			this.synergyLocked = this.container.appendChild(synergyLockedIcon.cloneNode());
+
+		this.createText();
 	}
-	setText(qty1, qty2, dec = 2) {
-		this.text.textContent = `${formatNumber(qty1, dec)} | ${formatNumber(qty2, dec)}`;
+	createText() {
+		this.textContainers = this.container.appendChild(createElement('div', {
+			className: 'pill-center pill-group',
+		}))
+		this.text0 = this.textContainers.appendChild(createElement('small', {
+			className: `badge-pill ${this.pillColor[0]}`,
+			text: 0
+		}));
+		this.text1 = this.textContainers.appendChild(createElement('small', {
+			className: `badge-pill ${this.pillColor[1]}`,
+			text: 0
+		}));
+	}
+	setText(qty0, qty1) {
+		this.text0.textContent = formatNumber(qty0, this.getDecimals(qty0));
+		this.text1.textContent = formatNumber(qty1, this.getDecimals(qty1));
+	}
+	setBg(newColors) {
+		if (this.bgColor[0] === newColors[0] && this.bgColor[1] === newColors[1])
+			return;
+		newColors.forEach((color, i) => this[`iconContainer${i}`].classList.replace(this.bgColor[i], color));
+		this.bgColor = newColors;
+		this.hasRedBg = this.bgColor.every(x => x === 'sb-red-bg');
+	}
+	setPillbox(newColors) {
+		if (this.pillColor[0] === newColors[0] && this.pillColor[1] === newColors[1])
+			return;
+		newColors.forEach((color, i) => this[`text${i}`].classList.replace(this.pillColor[i], color));
+		this.pillColor = newColors;
 	}
 	setImage() {
-		this.summon1Image.src = this.item.summons[0].media;
-		this.summon2Image.src = this.item.summons[1].media;
+		this.summon0Media.src = this.item.summons[0].media;
+		this.summon1Media.src = this.item.summons[1].media;
 	}
 }
 window.customElements.define('skillboosts-synergy', SkillBoostsSynergy);
@@ -241,13 +287,13 @@ class SBAgilitySelect extends HTMLElement {
 		this.iconMap.forEach((item, icon) => {
 			if (item instanceof EquipmentItem) {
 				if (player.equipment.checkForItem(item))
-					icon.setBg(getSetting('colorBgs')[0]);
+					icon.setBg('sb-green-bg');
 				else if (game.bank.getQty(item) !== 0)
-					icon.setBg(getSetting('colorBgs')[3]);
+					icon.setBg('sb-default-bg');
 				else if (skillBoosts.checkOtherEquipmentSets(item))
-					icon.setBg(getSetting('colorBgs')[1]);
+					icon.setBg('sb-yellow-bg');
 				else
-					icon.setBg(getSetting('colorBgs')[2]);
+					icon.setBg('sb-red-bg');
 			}
 		});
 	};
@@ -322,12 +368,14 @@ class SBColorSetting extends HTMLElement {
 				picker.value = input.value;
 				this.value[i] = input.value;
 				skillBoosts.agilitySetting.updateAllBgs();
+				skillBoosts.updateBackgrounds();
 				this.warning.classList.replace('d-flex', 'd-none');
 			});
 			picker.addEventListener('change', () => {
 				input.value = picker.value;
 				this.value[i] = picker.value;
 				skillBoosts.agilitySetting.updateAllBgs();
+				skillBoosts.updateBackgrounds();
 				this.warning.classList.replace('d-flex', 'd-none');
 			});
 			this.container.append(container);
@@ -340,8 +388,8 @@ class SBColorSetting extends HTMLElement {
 	}
 	colorSettingElem(value) {
 		let container = createElement('div', { className: 'sb-color-setting' });
-		let picker = createElement('input', { id: 'SB-picker', className: 'btn-light sb-picker', attributes: [['type', 'color']], parent: container });
-		let input = createElement('input', { id: 'input', className: 'form-control form-control-sm text-center sb-input', attributes: [['type', 'text']], parent: container });
+		let picker = createElement('input', { className: 'btn-light sb-picker', attributes: [['type', 'color']], parent: container });
+		let input = createElement('input', { className: 'form-control form-control-sm text-center sb-input', attributes: [['type', 'text']], parent: container });
 		picker.value = value;
 		input.value = value;
 		return { container, picker, input };
@@ -384,10 +432,7 @@ class AgilityCostSetting extends HTMLElement {
 		});
 	}
 	updateBg(icon) {
-		let backgroundColors = getSetting('colorBgs'),
-			bgColor = this.value.includes(icon.item.id) ? backgroundColors[0] : backgroundColors[2];
-
-		icon.setBg(bgColor);
+		icon.setBg(this.value.includes(icon.item.id) ? 'sb-green-bg' : 'sb-red-bg');
 	}
 	save(icon) {
 		if (this.value.includes(icon.item.id))

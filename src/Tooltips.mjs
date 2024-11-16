@@ -158,6 +158,11 @@ class Tooltip extends HTMLElement {
 		}
 	}
 	_updateAltContent(element, anchor) {
+		let icon = element.parentElement;
+
+		if (icon.item.validSlots && icon.item.validSlots.length === 2)
+			return skillBoosts.equipmentOnClick(icon, icon.item, icon.item.validSlots[1]);
+
 		this._tooltipContent.innerHTML = '';
 		this._tooltipContent.appendChild(skillBoosts.createSelection(element, element.parentElement.item));
 		this._show(element, anchor);

@@ -1,5 +1,4 @@
-const { characterStorage, patch } = mod.getContext(
-	import.meta);
+const { characterStorage, patch } = mod.getContext('Skill_Boosts');
 
 // Credits to Psycast (Equipment Presents) for the original crc32 system (SAVE_VERSION 1 & 2)
 // https://mod.io/g/melvoridle/m/psy-equipment-presets

@@ -30,7 +30,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		eternalRealm = hasItA && game.realms.getObjectByID('melvorItA:Eternal'),
 		slotTypes = ['melvorD:Weapon', 'melvorD:Shield', 'melvorD:Helmet', 'melvorD:Platebody', 'melvorD:Platelegs', 'melvorD:Boots', 'melvorD:Gloves', 'melvorD:Cape', 'melvorD:Amulet', 'melvorD:Ring', 'melvorD:Gem', 'melvorD:Enhancement1', 'melvorD:Enhancement2', 'melvorD:Enhancement3', 'melvorD:Quiver', 'melvorD:Summon1', 'melvorD:Consumable'],
 		providedRunes = ['melvorD:Air_Rune', 'melvorD:Water_Rune', 'melvorD:Earth_Rune', 'melvorD:Fire_Rune', 'melvorF:Nature_Rune', 'melvorF:Spirit_Rune', 'melvorF:Lava_Rune', 'melvorF:Mud_Rune', 'melvorTotH:Soul_Rune', 'melvorTotH:Infernal_Rune'],
-		catOverrides = ['melvorD:Allotment', 'melvorD:Herb', 'melvorD:Tree', 'melvorD:Fish', 'melvorD:Soup', 'melvorF:Consumables', 'melvorF:Runes', 'melvorF:Wands', 'melvorD:Synergies'],
+		catOverrides = ['melvorD:Allotment', 'melvorD:Herb', 'melvorD:Tree', 'melvorD:Fish', 'melvorD:Soup', 'melvorF:Consumables', 'melvorF:Runes', 'melvorF:Wands', 'melvorF:Staves', 'melvorD:Synergies', 'melvorF:Jewelry'],
 		itemsByRealm = new Map([
 			[melvorRealm.id, ['melvorF:Stardust', 'melvorF:Golden_Stardust', 'melvorD:Bird_Nest', 'melvorF:Ash', 'melvorD:Coal_Ore', 'melvorTotH:Charcoal']],
 			[abyssalRealm.id, ['melvorItA:Abyssal_Stardust', 'melvorItA:Shadow_Raven_Nest', 'melvorItA:Shadow_Drake_Nest', 'melvorItA:Withered_Ash']]
@@ -56,7 +56,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		dustItems = [],
 		filteredPets = [],
 		filterByIDSetting = [],
-		greenBg, yellowBg, redBg, defaultBg, filteredBg,
+		iconColors = ['sb-green-bg', 'sb-yellow-bg', 'sb-red-bg', 'sb-default-bg', 'sb-filtered-bg'],
 		getPresetSetting,
 		windowWidth,
 		loadedModList,
@@ -81,17 +81,17 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		}
 	});
 
-	function createInfotip(text, bg, colorClass = '') {
+	function createInfotip(text, bgColor, colorClass = '') {
 		let template = createElement('div');
 		let textNode = createElement('span', { text: text, className: 'ml-1' });
 		let icon = createElement('span', { text: '[ . ]' });
-		if (bg)
-			icon.style = `background-color: ${bg};color: ${bg}`;
-		else if (colorClass !== '')
+		if (bgColor) {
+			icon.classList.add(bgColor);
+		} else if (colorClass !== '')
 			icon.className = [`badge-pill bg-${colorClass} text-${colorClass} font-size-xs`];
 		else
 			textNode.textContent = `• ${textNode.textContent}`;
-		if (bg || colorClass !== '')
+		if (bgColor || colorClass !== '')
 			template.append(icon);
 		template.append(textNode);
 		return template;
@@ -107,32 +107,31 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 	}
 
 	function generateInfotips() {
-		let colors = [greenBg, defaultBg, yellowBg, redBg, filteredBg],
-			textClass = 'font-w600 d-flex justify-content-center text-info font-size-h6 mb-1 border-bottom',
-			filteredTT = createInfotip(getLang('FILTERED_ICON'), filteredBg);
+		let textClass = 'font-w600 d-flex justify-content-center text-info font-size-h6 mb-1 border-bottom',
+			filteredTT = createInfotip(getLang('FILTERED_ICON'), 'sb-filtered-bg');
 
 		let baseTooltip = createElement('div');
-		for (let i = 1; i < 5; i++) { baseTooltip.append(createInfotip(getLang(`ITEM_DESC_${i}`), colors[i - 1])); }
+		for (let i = 1; i < 5; i++) { baseTooltip.append(createInfotip(getLang(`ITEM_DESC_${i}`), iconColors[i - 1])); }
 		baseTooltip.append(filteredTT.cloneNode(true));
 
-		const addContainer = (elem) => createElement('div', { className: 'font-w400 font-size-sm' }).appendChild(elem).parentElement;
+		const addContainer = (elem) => createElement('div', { className: 'font-w400 font-size-sm sb-infotip' }).appendChild(elem).parentElement;
 
 		let filterInfotip = addContainer(createElement('div', { className: 'sb-pre-line', text: `${getLang('FILTERING_DESC_1')}\n${getLang('FILTERING_DESC_2')}\n${getLang('FILTERING_DESC_3')}` }));
 
 		let equipmentInfotip = addContainer(createElement('div', { className: textClass, text: getLangString('COMBAT_MISC_18') }));
-		equipmentInfotip.append(baseTooltip.cloneNode(true), createInfotip(getLang('POI_DESC_1'), null, 'danger'), createImgNode(passiveImg, 'skill-icon-xxs', getLang('PASSIVE')));
+		equipmentInfotip.append(baseTooltip.cloneNode(true), createInfotip(getLang('POI_DESC_1'), null, 'danger'), createImgNode(getResourceUrl('assets/passive_slot_filled.png'), 'skill-icon-xxs', getLang('PASSIVE')));
 		for (let i = 6; i < 8; i++) { equipmentInfotip.append(createInfotip(getLang(`ITEM_DESC_${i}`))); };
 
 		let consumableInfotip = addContainer(createElement('div', { className: textClass, text: getLangString('EQUIP_SLOT_Consumable') }));
 		consumableInfotip.append(baseTooltip.cloneNode(true), createInfotip(getLang('ITEM_DESC_5'), null, 'warning'), createImgNode(lockedSynergyImg, 'skill-icon-xxs', getLang('LOCKED_SYNERGY')), createInfotip(getLang('ITEM_DESC_6')));
 
 		let obstacleInfotip = addContainer(createElement('div', { className: textClass, text: getLangString('GAME_GUIDE_142') }));
-		for (let i = 1; i < 5; i++) { obstacleInfotip.append(createInfotip(getLang(`OBSTACLE_DESC_${i}`), colors[i - 1])); };
+		for (let i = 1; i < 5; i++) { obstacleInfotip.append(createInfotip(getLang(`OBSTACLE_DESC_${i}`), iconColors[i - 1])); };
 		obstacleInfotip.append(filteredTT.cloneNode(true), createImgNode(getResourceUrl('assets/inactive.png'), 'skill-icon-xxs', getLang('INACTIVE')));
 		for (let i = 5; i < 7; i++) { obstacleInfotip.append(createInfotip(getLang(`OBSTACLE_DESC_${i}`))); };
 
 		let otherInfotip = addContainer(createElement('div', { className: textClass, text: getLang('OTHERS') }));
-		otherInfotip.append(createInfotip(getLang('PURCHASE_DESC_1'), greenBg), createInfotip(getLang('OBSTACLE_DESC_3'), yellowBg), createInfotip(getLang('OTHER_DESC_1'), redBg), filteredTT.cloneNode(true), createInfotip(getLang('PURCHASE_DESC_2')), createInfotip(getLang('AUTOMATICALLY_HIDE')));
+		otherInfotip.append(createInfotip(getLang('PURCHASE_DESC_1'), 'sb-green-bg'), createInfotip(getLang('OBSTACLE_DESC_3'), 'sb-yellow-bg'), createInfotip(getLang('OTHER_DESC_1'), 'sb-red-bg'), filteredTT.cloneNode(true), createInfotip(getLang('PURCHASE_DESC_2')), createInfotip(getLang('AUTOMATICALLY_HIDE')));
 
 		return [filterInfotip, equipmentInfotip, consumableInfotip, obstacleInfotip, otherInfotip];
 	}
@@ -208,7 +207,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				realms.forEach(realm => {
 					let icon = new SkillBoostsIcon('', realm, realm.media, true, 28);
 					icon.setTooltip(realm.name);
-					icon.setBg('#6C757D');
+					icon.setBg('btn-secondary');
 					icon.container.classList.replace('m-1', 'mx-1');
 					icon.onclick = () => skillBoosts.onRealmChange(realm.id, undefined, this, this.skill.id);
 					this.realmIcons.push(icon);
@@ -256,7 +255,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			let icons = skillBoosts.getRealmIcons(false, false);
 			if (query === '') {
 				icons.forEach(icon => {
-					if (!icon.realms.includes(this.currentRealm) || (icon.isFiltered && !filterMode) || icon.isHidden || (icon.bgColor === redBg && getSetting('hideRedBgs').includes(icon.category)))
+					if (!icon.realms.includes(this.currentRealm) || (icon.isFiltered && !filterMode) || icon.isHidden || (icon.hasRedBg && getSetting('hideRedBgs').includes(icon.category)))
 						icon.hide();
 					else
 						icon.show();
@@ -325,10 +324,10 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		updateSelectedRealm(newRealm) {
 			let oldRealmIcon = this.realmIcons.find(x => x.item.id === this.currentRealm);
 			if (oldRealmIcon !== undefined)
-				oldRealmIcon.setBg('#6C757D');
+				oldRealmIcon.setBg('btn-secondary');
 			let newRealmIcon = this.realmIcons.find(x => x.item.id === newRealm);
 			if (newRealmIcon !== undefined)
-				newRealmIcon.setBg(greenBg);
+				newRealmIcon.setBg('sb-green-bg');
 			this.currentRealm = newRealm;
 		}
 		toggleMenu(onLoad) {
@@ -362,10 +361,12 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		updateIcon(icon) {
 			if (!icon || !icon.category)
 				return;
+
 			if (icon.isFiltered)
 				return skillBoosts.toggleFilterState(icon, icon.isFiltered, filterMode && icon.realms.includes(this.currentRealm));
+
 			if (icon.category === 'FillerObstacle')
-				return icon.setBg(defaultBg);
+				return icon.setBg('sb-default-bg');
 
 			let queue = skillBoosts.renderQueue[icon.category.toLowerCase()];
 			queue.bg.add(icon.item);
@@ -491,7 +492,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			filteredPets = [];
 		}
 		initSettings() {
-			this.updateBackgrounds(getSetting('colorBgs'), true);
+			this.updateBackgrounds();
 
 			filterByIDSetting = getSetting('filter').toLowerCase().replace(/\s/g, '').split(",");
 
@@ -584,13 +585,9 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					menu.toggleMenu(true);
 			});
 		}
-		updateBackgrounds(colors, onLoad) {
-			[greenBg, yellowBg, redBg, defaultBg, filteredBg] = colors;
-			infotips = generateInfotips();
-			if (!onLoad) {
-				this.getSkillIcons().forEach(icon => this.menu.updateIcon(icon));
-				this.data.menus.forEach(menu => menu.createTooltips());
-			}
+		updateBackgrounds() {
+			let colors = getSetting('colorBgs');
+			iconColors.forEach((color, i) => document.documentElement.style.setProperty(`--${color}`, colors[i]));
 		}
 		render() {
 			this.renderEquipmentBg();
@@ -799,7 +796,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				if (!icons)
 					icons = this.getSkillIcons(skillID);
 				icons.forEach(icon => {
-					if (!icon.realms.includes(newRealmID) || (icon.isFiltered && !filterMode) || icon.isHidden || (icon.bgColor === redBg && getSetting('hideRedBgs').includes(icon.category)))
+					if (!icon.realms.includes(newRealmID) || (icon.isFiltered && !filterMode) || icon.isHidden || (icon.hasRedBg && getSetting('hideRedBgs').includes(icon.category)))
 						icon.hide();
 					else
 						icon.show();
@@ -889,11 +886,9 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			return icon;
 		}
 		setIconOnClick(icon, item, category) {
-			if (item instanceof EquipmentItem) {
+			if (item instanceof EquipmentItem)
 				icon.onclick = () => this.equipmentOnClick(icon, item, item.validSlots[0]);
-				if (item.validSlots.length <= 2)
-					this.equipmentOnContextMenu(icon, item, getSlot((item.type === 'Familiar' ? 'melvorD:Summon2' : 'melvorD:Passive')));
-			} else if (category === 'Obstacle')
+			else if (category === 'Obstacle')
 				icon.onclick = () => this.obstacleOnClick(item, icon);
 			else if (item.type === 'Potion')
 				icon.onclick = () => this.potionOnClick(item, icon);
@@ -944,7 +939,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			return returnIcons ? icons : icons.map(x => x.item);
 		}
 		shouldFilterIcon(icon, removeFiltered, removeRedBgs) {
-			return (!removeFiltered || !icon.isFiltered || (filterMode && icon.isFiltered)) && (!removeRedBgs || !(icon.bgColor === redBg && getSetting('hideRedBgs').includes(icon.category)));
+			return (!removeFiltered || !icon.isFiltered || (filterMode && icon.isFiltered)) && (!removeRedBgs || !(icon.hasRedBg && getSetting('hideRedBgs').includes(icon.category)));
 		}
 		filterIcon(oIcon) {
 			let isFiltered = oIcon.isFiltered,
@@ -960,11 +955,11 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 		}
 		toggleFilterState(icon, setState, showIcon) {
 			icon.isFiltered = setState !== undefined ? setState : !icon.isFiltered;
-			icon.isFiltered ? icon.setBg(filteredBg) : this.menu.updateIcon(icon);
+			icon.isFiltered ? icon.setBg((icon.category === 'Synergy' ? ['sb-filtered-bg', 'sb-filtered-bg'] : 'sb-filtered-bg')) : this.menu.updateIcon(icon);
 			showIcon ? icon.show() : icon.hide();
 		}
 		hideUndiscoveredIcons(icon, category) {
-			if ((icon.bgColor === redBg && getSetting('hideRedBgs').includes(category)) || icon.isFiltered)
+			if ((icon.hasRedBg && getSetting('hideRedBgs').includes(category)) || icon.isFiltered)
 				icon.hide();
 			else if (this.menu !== undefined && icon.realms.includes(this.menu.currentRealm))
 				icon.show();
@@ -1030,7 +1025,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					return;
 				if (isAbyssal && item instanceof EquipmentItem && ['melvorD:Mining_Gloves', 'melvorD:Gem_Gloves', 'melvorF:Scroll_Of_Essence'].includes(item.id))
 					return;
-				if (item && item.consumesOn && (item.consumesOn.some(x => x && ((x.realms && !x.realms.has(realm)) || (x.actions && [...x.actions].some(y => y.realm !== realm))))))
+				if (item && item.consumesOn && (item.consumesOn.some(x => x && ((x.realms && !x.realms.has(realm)) || (x.actions && Array.from(x.actions).some(y => y.realm !== realm)) | (x.npcs && Array.from(x.npcs).some(y => y.realm !== realm))))))
 					return;
 
 				const searchMods = this.data.modifiers.get(realm.id, skill.id),
@@ -1041,7 +1036,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					hasRealm = (x) => (!x.realm || x.realm === realm),
 					hasSkill = (x) => (!x.skill || x.skill === skill || (x.skill.isCombat && skill === game.attack)),
 					hasCategory = (m, cat) => (!m[cat] || (namespaceByRealm.has(realm.id) && namespaceByRealm.get(realm.id).includes(m[cat].namespace)) || (!namespaceByRealm.has(realm.id) && m[cat].namespace === realm.namespace) || (isAbyssal && catOverrides.includes(m[cat].id))),
-					hasAction = (m) => (!m.action || (m.action.realm === realm && ((m.action.potions && m.action.potions[0].action === skill) || (!m.action.skill || (!m.action.potions && m.action.skill === skill)) || item.id === 'melvorTotH:Toxic_Maker_Gloves'))),
+					hasAction = (m) => (!m.action || (!m.action.potions || (m.action.potions[0].action === skill && m.action.potions[0].consumesOn.some(x => (!x.realms || x.realms.has(realm))))) || (item.id === 'melvorTotH:Toxic_Maker_Gloves') && realm === melvorRealm),
 					hasCurrency = (m) => (!m.currency || m.currency === gpCurr || (skill === game.attack && m.currency === scCurr)),
 					hasItem = (m) => (!m.item || ![...itemsByRealm.values()].flat().includes(m.item.id) || !itemsByRealm.has(realm.id) || itemsByRealm.get(realm.id).includes(m.item.id)),
 					foundMods = itemModifiers.filter(({ mod, inverted, conditionals }) => isValid(mod, inverted) && hasRealm(mod) && hasSkill(mod) && hasCategory(mod, 'category') && hasCategory(mod, 'subcategory') && hasAction(mod) && hasCurrency(mod) && hasDamageType(mod) && (!conditionals || conditionals.every(x => hasDamageType(x) && isCorrupted(x))) && hasItem(mod) && searchMods.some(y => mod.modifier && y === mod.modifier.id));
@@ -1133,12 +1128,6 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				}
 			}
 		}
-		equipmentOnContextMenu(icon, item, slot) {
-			if (nativeManager.isMobile)
-				this.onLongPress(icon, () => this.equipmentOnClick(icon, item, slot));
-			else
-				icon.oncontextmenu = (e) => { e.preventDefault(), this.equipmentOnClick(icon, item, slot); };
-		}
 		checkOtherEquipmentSets(item) {
 			return player.equipmentSets.some(({ equipment }) => {
 				if (equipment === player.equipment)
@@ -1163,7 +1152,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			}
 
 			if (player.equipment.itemSlotMap.has(item)) {
-				icon.setBg(greenBg);
+				icon.setBg('sb-green-bg');
 				let itemSlot = player.equipment.getSlotOfItem(item);
 				if (itemSlot.id === 'melvorD:Passive') {
 					icon.passiveIcon = passiveIcon;
@@ -1175,11 +1164,11 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					icon.container.append(enhancementIcon);
 				}
 			} else if (game.bank.getQty(item) > 0)
-				icon.setBg(defaultBg);
+				icon.setBg('sb-default-bg');
 			else if (this.checkOtherEquipmentSets(item))
-				icon.setBg(yellowBg);
+				icon.setBg('sb-yellow-bg');
 			else
-				icon.setBg(redBg);
+				icon.setBg('sb-red-bg');
 
 			if (hideIcons)
 				this.hideUndiscoveredIcons(icon, 'Equipment');
@@ -1189,6 +1178,9 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				occupiedSlots = new Map();
 
 			game.equipmentSlots.forEach(slot => {
+				if (!player.isEquipmentSlotUnlocked(slot))
+					return occupiedSlots.set(slot, game.emptyEquipmentItem);
+
 				let slotIcons = icons.filter(x => x.item.validSlots.includes(slot)),
 					itemInSlot = player.equipment.getItemInSlot(slot.id);
 
@@ -1223,13 +1215,13 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				return;
 
 			if (player.equipment.checkForItem(consumable) || game.potions.isPotionActive(consumable) || (consumable.id === 'melvorD:Charge_Stone_of_Rhaelyx' && game.bank.getQty(consumable) > 0))
-				icon.setBg(greenBg);
+				icon.setBg('sb-green-bg');
 			else if (Math.max(game.bank.getQty(consumable) - getSetting('allbutx'), 0) > 0)
-				icon.setBg(defaultBg);
+				icon.setBg('sb-default-bg');
 			else if (this.checkOtherEquipmentSets(consumable))
-				icon.setBg(yellowBg);
+				icon.setBg('sb-yellow-bg');
 			else
-				icon.setBg(redBg);
+				icon.setBg('sb-red-bg');
 
 			if (hideIcons)
 				this.hideUndiscoveredIcons(icon, 'Consumable');
@@ -1348,19 +1340,19 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 
 			if (poi.hex.map !== game.cartography.activeMap) {
 				icon.setPillbox('bg-danger');
-				icon.setBg(redBg);
+				icon.setBg('sb-red-bg');
 				return;
 			} else
 				icon.setPillbox('bg-secondary');
 
 			if (poi.hex.isPlayerHere)
-				icon.setBg(greenBg);
+				icon.setBg('sb-green-bg');
 			else if (!poi.hex.isMastered)
-				icon.setBg(redBg);
+				icon.setBg('sb-red-bg');
 			else if (!this.getTravelCosts(poi).checkIfOwned())
-				icon.setBg(yellowBg);
+				icon.setBg('sb-yellow-bg');
 			else
-				icon.setBg(defaultBg);
+				icon.setBg('sb-default-bg');
 
 			if (hideIcons)
 				this.hideUndiscoveredIcons(icon, 'POI');
@@ -1425,7 +1417,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				realms.push(defaultRealm.id);
 			let fillerObstacle = fillerObstacles.get(obstacle.realm.id, obstacle.category);
 			let fillerIcon = new SkillBoostsIcon('FillerObstacle', fillerObstacle, fillerObstacle.media);
-			fillerIcon.setBg(defaultBg);
+			fillerIcon.setBg('sb-default-bg');
 			fillerIcon.elem = 2;
 			fillerIcon.skill = skill.id;
 			fillerIcon.realms = realms;
@@ -1540,14 +1532,14 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				cost = this.getObstacleCost(obstacle, true);
 
 			if (obstacle.isBuilt)
-				icon.setBg(greenBg);
+				icon.setBg('sb-green-bg');
 			else if (hasRequirements) {
 				if (!cost.checkIfOwned())
-					icon.setBg(yellowBg);
+					icon.setBg('sb-yellow-bg');
 				else
-					icon.setBg(defaultBg);
+					icon.setBg('sb-default-bg');
 			} else
-				icon.setBg(redBg);
+				icon.setBg('sb-red-bg');
 
 			if (hideIcon)
 				this.hideUndiscoveredIcons(icon, 'Obstacle');
@@ -1602,10 +1594,10 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			if (icon === undefined)
 				return;
 
-			icon.setBg(redBg);
+			icon.setBg('sb-red-bg');
 
 			if (hideIcons)
-				this.hideUndiscoveredIcons(icon, true, 'Pet');
+				this.hideUndiscoveredIcons(icon, 'Pet');
 		}
 		petOnClick(icon) {
 			if (filterMode)
@@ -1649,11 +1641,11 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				canPurchase = game.shop.getPurchaseCosts(purchase, 1).checkIfOwned();
 
 			if (hasRequirements && canPurchase)
-				icon.setBg(greenBg);
+				icon.setBg('sb-green-bg');
 			else if (hasRequirements && !canPurchase)
-				icon.setBg(yellowBg);
+				icon.setBg('sb-yellow-bg');
 			else
-				icon.setBg(redBg);
+				icon.setBg('sb-red-bg');
 
 			if (hideIcons)
 				this.hideUndiscoveredIcons(icon, 'Purchase');
@@ -1758,7 +1750,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					return;
 				let icon = new SkillBoostsIcon('Astrology', item, item.media, true);
 				icon.setTooltip(item.name);
-				icon.setBg(defaultBg);
+				icon.setBg('sb-default-bg');
 				dustContainer.append(icon);
 				dustItems.push(icon);
 				MainTooltipController.init(icon.container);
@@ -1777,9 +1769,9 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				return;
 
 			if (game.astrology.isBasicSkillRecipeUnlocked(constellation) && this.canAccessAbyssalRealm(constellation))
-				icon.setBg(defaultBg);
+				icon.setBg('sb-default-bg');
 			else
-				icon.setBg(redBg);
+				icon.setBg('sb-red-bg');
 
 			if (hideIcons)
 				this.hideUndiscoveredIcons(icon, 'Constellation');
@@ -1795,12 +1787,17 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 				});
 			});
 		}
+		setSynergyOpacity() {
+			let icons = this.getCategoryIcons('Synergy', true, true).filter(x => x.realms.includes(this.menu.currentRealm));
+			let isEquipped = icons.find(x => player.activeSummoningSynergy === x.item);
+			icons.forEach(icon => icon.setOpacity((isEquipped && isEquipped.item !== icon.item ? 0.5 : 1)));
+		}
 		synergyOnClick(synergy, icon) {
 			if (filterMode)
 				this.filterIcon(icon);
 			else if (debugEnabled)
 				console.dir(icon);
-			else if (player.equippedSummoningSynergy !== synergy) {
+			else {
 				let { equippedQty0, equippedQty1, bankQty0, bankQty1 } = this.getSynergyQty(synergy);
 				if (equippedQty0 + bankQty0 > 0 && equippedQty1 + bankQty1 > 0) {
 					let slots = [getSlot('melvorD:Summon1'), getSlot('melvorD:Summon2')];
@@ -1819,42 +1816,43 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			if (icon === undefined)
 				return;
 
-			let { equippedQty0, equippedQty1, bankQty0, bankQty1, otherSetQty0, otherSetQty1 } = this.getSynergyQty(synergy);
-
 			if (player.equippedSummoningSynergy === synergy)
-				icon.setBg(greenBg);
-			else if (equippedQty0 + bankQty0 > 0 && equippedQty1 + bankQty1 > 0)
-				icon.setBg(defaultBg);
-			else if (otherSetQty0 > 0 && otherSetQty1 > 0)
-				icon.setBg(yellowBg);
-			else
-				icon.setBg(redBg);
+				return icon.setBg(['sb-green-bg', 'sb-green-bg']);
+
+			let quantities = this.getSynergyQty(synergy),
+				bgColors = [];
+
+			for (let i = 0; i < synergy.summons.length; i++) {
+				if (quantities[`bankQty${i}`] > 0 || quantities[`equippedQty${i}`] > 0)
+					bgColors.push('sb-default-bg');
+				else if (quantities[`otherSetQty${i}`] > 0)
+					bgColors.push('sb-yellow-bg');
+				else
+					bgColors.push('sb-red-bg');
+			};
 
 			if (hideIcons)
 				this.hideUndiscoveredIcons(icon, 'Synergy');
-		}
-		setSynergyOpacity() {
-			let icons = this.getCategoryIcons('Synergy', true, true).filter(x => x.realms.includes(this.menu.currentRealm));
-			let isEquipped = icons.find(x => player.activeSummoningSynergy === x.item);
-			icons.forEach(icon => icon.setOpacity((isEquipped && isEquipped.item !== icon.item ? 0.5 : 1)));
+			icon.setBg(bgColors);
 		}
 		updateSynergyQty(synergy, icon = this.getItemIcon(synergy, true)) {
 			if (icon === undefined)
 				return;
 
-			let { equippedQty0, equippedQty1, bankQty0, bankQty1, otherSetQty0, otherSetQty1 } = this.getSynergyQty(synergy);
-			icon.setPillbox('bg-secondary');
+			let quantities = this.getSynergyQty(synergy),
+				qtys = [],
+				pillClasses = [];
 
-			if (player.equippedSummoningSynergy === synergy) {
-				icon.setText(equippedQty0, equippedQty1);
-				if (bankQty0 > 0 || bankQty1 > 0)
-					icon.setPillbox('bg-warning');
-			} else if (equippedQty0 + bankQty0 > 0 && equippedQty1 + bankQty1 > 0) {
-				icon.setText(equippedQty0 + bankQty0, equippedQty1 + bankQty1);
-			} else if (otherSetQty0 > 0 && otherSetQty1 > 0)
-				icon.setText(otherSetQty0, otherSetQty1);
-			else
-				icon.setText(0, 0);
+			for (let i = 0; i < synergy.summons.length; i++) {
+				let equippedQty = quantities[`equippedQty${i}`],
+					bankQty = quantities[`bankQty${i}`];
+
+				qtys.push(equippedQty || bankQty || quantities[`otherSetQty${i}`]);
+				pillClasses.push((equippedQty > 0 && bankQty > 0 ? 'bg-warning' : 'bg-secondary'));
+			};
+
+			icon.setText(qtys[0], qtys[1]);
+			icon.setPillbox(pillClasses);
 		}
 		updateSynergyLocked(synergy, icon = this.getItemIcon(synergy, true)) {
 			if (icon === undefined)
@@ -1909,10 +1907,10 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			if (icon === undefined)
 				return;
 
-			icon.setBg(redBg);
+			icon.setBg('sb-red-bg');
 
 			if (hideIcons)
-				this.hideUndiscoveredIcons(icon, true, 'Relic');
+				this.hideUndiscoveredIcons(icon, 'Relic');
 		}
 		relicOnClick(icon) {
 			if (filterMode)
@@ -1999,21 +1997,6 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					lastParent = parent;
 			});
 		}
-		onLongPress(element, callbackFn) {
-			let timer;
-			element.addEventListener('touchstart', (_e) => {
-				timer = setTimeout(() => {
-					timer = null;
-					callbackFn();
-				}, 500);
-			});
-
-			function cancel() {
-				clearTimeout(timer);
-			}
-			element.addEventListener('touchend', cancel);
-			element.addEventListener('touchmove', cancel);
-		}
 		createSelection(element, item) {
 			let container = createElement('div');
 			let name = container.appendChild(createElement('div', { className: 'font-w600 text-center border-bottom' }));
@@ -2052,7 +2035,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					media = isEmpty ? slot.emptyMedia : existingItem.media,
 					icon = new SkillBoostsIcon('', (isEmpty ? slot : item), media, isEmpty, 32);
 
-				icon.setBg((isEmpty ? defaultBg : greenBg));
+				icon.setBg((isEmpty ? 'sb-default-bg' : 'sb-green-bg'));
 				icon.onclick = () => this.equipmentOnClick(element, item, slot, true);
 				isEmpty ? icon.setTooltip(slot.emptyName) : icon.container.appendChild(createImgNode(slot.emptyMedia, 'sb-inactive-sm'));
 				MainTooltipController.init(icon.container);
@@ -2347,9 +2330,10 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 					modifierContainer.append(descriptions[0]);
 			}
 
-			let miscContainer = this.createDividerElem(container, ' sb-font-sm');
+			let miscContainer = this.createDividerElem(container, ' sb-font-sm'),
+				passiveSlot = getSlot('melvorD:Passive');
 
-			if (item.validSlots.includes(getSlot('melvorD:Passive')))
+			if (player.isEquipmentSlotUnlocked(passiveSlot) && item.validSlots.includes(passiveSlot))
 				miscContainer.append(createElement('span', { className: 'text-info', text: getLangString('MENU_TEXT_PASSIVE_SLOT_COMPATIBLE') }));
 		}
 		createSynergyTooltip(container, item) {
@@ -2756,7 +2740,7 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 			type: 'custom',
 			name: 'colorBgs',
 			label: '',
-			default: ['#005706', '#665e00', '#5c000e', '#434d5b', '#006bb8'], // #6803ab
+			default: ['#005706', '#665e00', '#5c000e', '#434d5b', '#006bb8'], // #4a047c
 			render(name, onChange, config) {
 				let setting = new SBColorSetting(config);
 				return setting;
@@ -2841,8 +2825,8 @@ export async function setup({ settings, loadModule, loadTemplates, onCharacterSe
 
 	function addToImageLoader(icon) {
 		if (icon instanceof SkillBoostsSynergy) {
-			ImageLoader.register(icon.summon1Image, icon.item.summons[0].media);
-			ImageLoader.register(icon.summon2Image, icon.item.summons[1].media);
+			ImageLoader.register(icon.summon0Media, icon.item.summons[0].media);
+			ImageLoader.register(icon.summon1Media, icon.item.summons[1].media);
 		} else {
 			let media = icon.category === 'Relic' ? icon.realms.includes('melvorItA:Abyssal') ? abyssalRelicImage : fullRelicImg : icon.item.media;
 			ImageLoader.register(icon.image, media);

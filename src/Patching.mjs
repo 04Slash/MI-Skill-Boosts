@@ -1,10 +1,21 @@
-const { patch, settings } = mod.getContext(
-		import.meta),
+const { patch, settings } = mod.getContext('Skill_Boosts'),
 	player = game.combat.player,
 	getSynergy = (set) => {
 		if (!(set instanceof Equipment))
 			return;
-		return game.summoning.getSynergy(set.getItemInSlot('melvorD:Summon1'), set.getItemInSlot('melvorD:Summon2'));
+		let summon1 = set.getItemInSlot('melvorD:Summon1'),
+			summon2 = set.getItemInSlot('melvorD:Summon2');
+		return { synergy: game.summoning.getSynergy(summon1, summon2), summon1, summon2 };
+	},
+	getSynergySummons = (newSynergy) => {
+		let summons = new Set();
+		[prevSynergy, newSynergy].forEach(synergy => {
+			if (synergy && synergy.summon1 && synergy.summon1 !== game.emptyEquipmentItem)
+				summons.add(synergy.summon1);
+			if (synergy && synergy.summon2 && synergy.summon2 !== game.emptyEquipmentItem)
+				summons.add(synergy.summon2);
+		});
+		return summons;
 	},
 	addToRenderQueue = (item, category, types) => types.forEach(type => skillBoosts.renderQueue[category][type].add(item)),
 	getCategoryIcons = (category) => skillBoosts.getCategoryIcons(category),
@@ -16,9 +27,9 @@ const { patch, settings } = mod.getContext(
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 	abyssalRealm = hasItA && game.realms.getObjectByID('melvorItA:Abyssal');
 
-let oldEquipmentSet = player.selectedEquipmentSet,
+let prevSet = player.selectedEquipmentSet,
 	destroyedObstacles = [],
-	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, isRendering, previousSynergy, prevMarkLevel;
+	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, isRendering, prevSynergy, prevMarkLevel;
 
 // Equipment Events
 // Update after item equipped
@@ -29,14 +40,11 @@ player._events.on('itemEquipped', e => {
 		addToRenderQueue(e.item, 'consumable', ['bg', 'qty']);
 	}
 
-	if (previousSynergy && previousSynergy.summons.some(x => x.product === e.item)) {
-		addToRenderQueue(previousSynergy, 'synergy', ['bg', 'qty']);
-		previousSynergy = undefined;
-	}
-	let newSynergy = player.equippedSummoningSynergy;
-	if (newSynergy && newSynergy.summons.some(x => x.product === e.item)) {
-		addToRenderQueue(newSynergy, 'synergy', ['bg', 'qty']);
-	}
+	let summons = getSynergySummons(getSynergy(player.equipment));
+	getCategoryIcons('Synergy').forEach(synergy => {
+		if (synergy.summons.some(x => summons.has(x.product) || x.product === unequippedItem))
+			addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
+	});
 
 	if (e.item instanceof WeaponItem)
 		swapCombatRealm(e.item);
@@ -168,20 +176,23 @@ export function addEmitters() {
 // Class Patches
 // Equipment Patches
 // Update on equipment set change
-patch(Player, 'changeEquipmentSet').before(function() {
-	oldEquipmentSet = player.selectedEquipmentSet;
+patch(Player, 'changeEquipmentSet').before(function(setID) {
+	prevSet = player.selectedEquipmentSet;
+	prevSynergy = getSynergy(this.equipment);
 });
 patch(Player, 'changeEquipmentSet').after(function(_, setID) {
-	if (this.equipmentSets.length <= setID)
+	if (this.equipmentSets.length <= setID || prevSet === setID)
 		return;
 	try {
-		let setsToUpdate = Array.from(new Set([oldEquipmentSet, setID]));
-		setsToUpdate.forEach(set => {
-			let eSet = player.equipmentSets[set];
-			if (!eSet)
-				return;
-			let synergy = getSynergy(eSet.equipment);
-			eSet.equipment.equippedArray.forEach(slot => {
+		let summons = getSynergySummons(getSynergy(this.equipmentSets[setID].equipment));
+
+		getCategoryIcons('Synergy').forEach(synergy => {
+			if (synergy.summons.some(x => summons.has(x.product) || x.product === unequippedItem))
+				addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
+		});
+
+		[prevSet, setID].forEach(set => {
+			player.equipmentSets[set].equipment.equippedArray.forEach(slot => {
 				if (slot.slot.id === 'melvorD:Weapon')
 					swapCombatRealm(slot.item);
 				if (slot.isEmpty)
@@ -191,9 +202,6 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 					addToRenderQueue(slot.item, 'consumable', ['bg', 'qty']);
 				else
 					addToRenderQueue(slot.item, 'equipment', ['bg']);
-
-				if (synergy && synergy.summons.some(x => x.product === slot.item))
-					addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
 			});
 		});
 		skillBoosts.render();
@@ -202,11 +210,11 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 	}
 });
 patch(Player, 'equipItem').before(function(item, set, slot, quantity) {
-	previousSynergy = getSynergy(this.equipmentSets[set].equipment);
+	prevSynergy = getSynergy(this.equipmentSets[set].equipment);
 });
 patch(Equipment, 'unequipItem').before(function(slot) {
 	unequippedItem = this.getItemInSlot(slot.id);
-	previousSynergy = player.equippedSummoningSynergy;
+	prevSynergy = getSynergy(this.equipment);
 });
 patch(Equipment, 'unequipItem').after(function(_, slot) {
 	try {
@@ -216,10 +224,11 @@ patch(Equipment, 'unequipItem').after(function(_, slot) {
 			addToRenderQueue(unequippedItem, 'consumable', ['bg', 'qty']);
 		}
 
-		if (previousSynergy) {
-			addToRenderQueue(previousSynergy, 'synergy', ['bg', 'qty']);
-			previousSynergy = undefined;
-		}
+		let summons = getSynergySummons();
+		getCategoryIcons('Synergy').forEach(synergy => {
+			if (synergy.summons.some(x => summons.has(x.product) || x.product === unequippedItem))
+				addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
+		});
 
 		if (unequippedItem instanceof WeaponItem)
 			swapCombatRealm();
@@ -472,16 +481,15 @@ patch(ShopMenu, 'updateItemPostPurchase').after(function(_, purchase) {
 
 // Update Synergies
 patch(Player, 'quickEquipSynergy').before(function(synergy) {
-	previousSynergy = player.equippedSummoningSynergy;
+	prevSynergy = getSynergy(this.equipment);
 });
 patch(Player, 'quickEquipSynergy').after(function(_, synergy) {
-	if (getCategoryIcons('Synergy').includes(synergy)) {
-		addToRenderQueue(synergy, 'synergy', ['bg', 'qty']);
-	}
-	if (previousSynergy) {
-		addToRenderQueue(previousSynergy, 'synergy', ['bg', 'qty']);
-		previousSynergy = undefined;
-	}
+	let summons = getSynergySummons(this.equipment);
+	getCategoryIcons('Synergy').forEach(syn => {
+		if (syn.summons.some(x => summons.has(x.product)))
+			addToRenderQueue(syn, 'synergy', ['bg', 'qty']);
+	});
+	prevSynergy = undefined;
 });
 patch(Summoning, 'discoverMark').before(function(mark) {
 	prevMarkLevel = this.getMarkLevel(mark);
