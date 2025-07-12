@@ -35,7 +35,8 @@ class SBSave {
 			...game.pets.allObjects,
 			...game.shop.purchases.allObjects,
 			...game.astrology.actions.allObjects,
-			...game.summoning.actions.allObjects
+			...game.summoning.actions.allObjects,
+			...game.ancientRelics.allObjects
 		];
 		if (cloudManager.hasAoDEntitlementAndIsEnabled) {
 			game.cartography.worldMaps.forEach(map => crcStrings.push(...map.pointsOfInterest.allObjects));
@@ -76,7 +77,7 @@ class SBSave {
 			if (compressedData)
 				characterStorage.setItem('saveData', compressedData);
 		} catch (e) {
-			notifyPlayer(game.combat, `[Skill Boosts]: ${e}`, 'danger');
+			notifyPlayer(-1, `[Skill Boosts]: ${e}`, 'danger');
 		}
 	}
 	decode(reader, saveString) {

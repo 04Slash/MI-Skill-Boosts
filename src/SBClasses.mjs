@@ -69,7 +69,7 @@ class SkillBoostsIconElement extends HTMLElement {
 	}
 }
 
-class SkillBoostsIcon extends SkillBoostsIconElement {
+export class SkillBoostsIcon extends SkillBoostsIconElement {
 	constructor(category, item, media, basicTooltip = false, size = 40) {
 		super(category, item);
 		this.basicTooltip = basicTooltip;
@@ -101,7 +101,7 @@ class SkillBoostsIcon extends SkillBoostsIconElement {
 }
 window.customElements.define('skillboosts-icon', SkillBoostsIcon);
 
-class SkillBoostsSynergy extends SkillBoostsIconElement {
+export class SkillBoostsSynergy extends SkillBoostsIconElement {
 	constructor(category, synergy) {
 		super(category, synergy);
 		this.bgColor = ['sb-default-bg', 'sb-default-bg'];
@@ -171,7 +171,7 @@ class SkillBoostsSynergy extends SkillBoostsIconElement {
 }
 window.customElements.define('skillboosts-synergy', SkillBoostsSynergy);
 
-class SBAgilitySelect extends HTMLElement {
+export class SBAgilitySelect extends HTMLElement {
 	constructor(built, destroy, iconArr) {
 		super();
 		this.built = built;
@@ -342,14 +342,14 @@ class SBAgilitySelect extends HTMLElement {
 }
 window.customElements.define('sb-agility-select', SBAgilitySelect);
 
-class SBColorSetting extends HTMLElement {
+export class SBColorSetting extends HTMLElement {
 	constructor(config) {
 		super();
 		this.config = config;
 		this.value = config.default;
 		this._content = new DocumentFragment();
 		this.warning = createElement('span', {
-			text: `${langString['SETTING_HEX_FORMAT'][setLang]} #rrggbb`,
+			text: `${skillBoosts.getLang('SETTING_HEX_FORMAT')} #rrggbb`,
 			className: 'd-none justify-content-center alert-danger mb-2'
 		});
 		this.container = createElement('div', {
@@ -397,7 +397,7 @@ class SBColorSetting extends HTMLElement {
 }
 window.customElements.define('sb-color-setting', SBColorSetting);
 
-class AgilityCostSetting extends HTMLElement {
+export class AgilityCostSetting extends HTMLElement {
 	constructor(config) {
 		super();
 		this.config = config;
@@ -446,7 +446,7 @@ class AgilityCostSetting extends HTMLElement {
 }
 window.customElements.define('sb-agility-setting', AgilityCostSetting);
 
-class SBCompactCheckboxGroup extends HTMLElement {
+export class SBCompactCheckboxGroup extends HTMLElement {
 	constructor() {
 		super();
 		this.checkboxes = [];
@@ -488,7 +488,7 @@ class SBCompactCheckboxGroup extends HTMLElement {
 }
 window.customElements.define('sb-checkbox-group', SBCompactCheckboxGroup);
 
-class SBRenderQueue {
+export class SBRenderQueue {
 	constructor() {
 		this.equipment = {
 			bg: new Set(),
@@ -528,23 +528,3 @@ class SBRenderQueue {
 		this.menu = false;
 	}
 }
-
-const langString = {
-	'SETTING_HEX_FORMAT': {
-		'en': 'Format:',
-		'zh-CN': '格式：',
-		'zh-TW': '格式：',
-		'fr': 'Format:',
-		'de': 'Format:',
-		'it': 'Formato:',
-		'ko': '체재:',
-		'ja': 'フォーマット：',
-		'pt': 'Formatar:',
-		'pt-br': 'Formatar:',
-		'es': 'Formato:',
-		'ru': 'Формат:',
-		'tr': 'Biçim:',
-	},
-};
-
-export { SkillBoostsIcon, SkillBoostsSynergy, SBAgilitySelect, SBRenderQueue, SBCompactCheckboxGroup, AgilityCostSetting, SBColorSetting };

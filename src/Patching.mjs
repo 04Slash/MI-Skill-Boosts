@@ -1,4 +1,4 @@
-const { patch, settings } = mod.getContext('Skill_Boosts'),
+const { patch, settings, getResourceUrl } = mod.getContext('Skill_Boosts'),
 	player = game.combat.player,
 	getSynergy = (set) => {
 		if (!(set instanceof Equipment))
@@ -27,7 +27,7 @@ const { patch, settings } = mod.getContext('Skill_Boosts'),
 	melvorRealm = game.realms.getObjectByID('melvorD:Melvor'),
 	abyssalRealm = hasItA && game.realms.getObjectByID('melvorItA:Abyssal');
 
-let prevSet = player.selectedEquipmentSet,
+let prevSet = 0,
 	destroyedObstacles = [],
 	isPetUnlocked, unequippedItem, lazyRenderer, fastRenderer, isRendering, prevSynergy, prevMarkLevel;
 
@@ -117,7 +117,7 @@ game.township.on('buildingCountChanged', e => {
 
 // Update Purchases on Museum Item Donations
 if (hasAoD) {
-	game.archaeology.on('itemDonated', e => {
+	game.archaeology.museum.on('itemDonated', e => {
 		getCategoryIcons('Purchase').filter(x => x.purchaseRequirements.some(y => y.count === e.newCount)).forEach(purchase => {
 			addToRenderQueue(purchase, 'purchase', ['bg']);
 		});
@@ -130,7 +130,7 @@ export function addEmitters() {
 	let levels = hasItA ? ['level', 'abyssalLevel'] : ['level'];
 	skillBoosts.data.skills.forEach(skill => {
 		levels.forEach(lvl => {
-			if (skill[lvl] >= skill[`max${lvl[0].toUpperCase() + lvl.slice(1)}Cap`])
+			if (skill[lvl] >= skill[`max${setToUppercase(lvl)}Cap`])
 				return;
 
 			if (skill === game.agility) {
@@ -177,7 +177,9 @@ export function addEmitters() {
 // Equipment Patches
 // Update on equipment set change
 patch(Player, 'changeEquipmentSet').before(function(setID) {
-	prevSet = player.selectedEquipmentSet;
+	if (this.equipmentSets.length <= this.selectedEquipmentSet)
+		return;
+	prevSet = this.selectedEquipmentSet;
 	prevSynergy = getSynergy(this.equipment);
 });
 patch(Player, 'changeEquipmentSet').after(function(_, setID) {
@@ -192,7 +194,7 @@ patch(Player, 'changeEquipmentSet').after(function(_, setID) {
 		});
 
 		[prevSet, setID].forEach(set => {
-			player.equipmentSets[set].equipment.equippedArray.forEach(slot => {
+			this.equipmentSets[set].equipment.equippedArray.forEach(slot => {
 				if (slot.slot.id === 'melvorD:Weapon')
 					swapCombatRealm(slot.item);
 				if (slot.isEmpty)
@@ -273,10 +275,14 @@ patch(Bank, 'upgradeItemOnClick').after(function(_, upgrade, upgradeQuantity) {
 patch(PotionManager, 'usePotion').replace(function(o, potion, loadPotions) {
 	try {
 		let oldPotion = game.potions.activePotions.get(potion.action);
-		if (this.game !== game || Math.max(game.bank.getQty(potion) - getSetting('allbutx'), 0) > 0)
+		let qty = game.bank.getQty(potion);
+		if (this.game !== game || Math.max(qty - getSetting('allbutx'), 0) > 0)
 			o(potion, loadPotions);
-		else
+		else {
+			if (qty > 0)
+				notifyPlayer(-1, langString['POTION_USE_PREVENTED'][setLang], 'danger', 0);
 			this.removePotion(potion.action, false);
+		}
 		addToRenderQueue(potion, 'consumable', ['bg', 'qty']);
 		if (oldPotion)
 			addToRenderQueue(oldPotion.item, 'consumable', ['bg']);
@@ -680,10 +686,6 @@ function clearRenderer() {
 patch(SidebarItem, 'click').after(function(o) {
 	if (game.skillPageMap.has(game.skills.getObjectByID(this.id)))
 		skillBoosts.onSkillChange(true);
-	else if (game.pages.registeredObjects.has(this.id) && this.id !== 'melvorD:Combat') {
-		skillBoosts.selectedSkillID = undefined;
-		skillBoosts.menu = undefined;
-	}
 });
 // Update the menu when a combat skill or the combat minibar is clicked
 patch(BaseManager, 'onCombatPageChange').after(function(o) {
@@ -696,7 +698,17 @@ patch(Tutorial, 'completeTutorial').after(function(o) {
 // Introduce custom loops for renderQueue
 game._events.on('offlineLoopExited', e => startRenderer());
 game._events.on('offlineLoopEntered', e => clearRenderer());
+// Override Pillar media
 patch(AgilityPillar, 'media').get(function(o) { return this._media; });
+// Create Ancient Relics media
+Object.defineProperty(AncientRelic.prototype, 'media', {
+	get() {
+		if ([game.harvesting, game.corruption].includes(this.skill) || this.id.includes('Abyssal'))
+			return getResourceUrl('assets/abyssalRelic.png');
+		else
+			return assets.getURI('assets/media/main/relic_progress_5.png');
+	}
+});
 // Fix for black Cartography Map bug
 patch(WorldMapDisplayElement, 'setViewportSize').replace(function() {
 	if (this.offsetParent === null)
@@ -711,3 +723,21 @@ patch(WorldMapDisplayElement, 'setViewportSize').replace(function() {
 	this.computeViewportBorders();
 	this.setViewportClamp();
 });
+
+const langString = {
+	'POTION_USE_PREVENTED': {
+		'en': 'Using a potion will reduce your potion quantity below the quantity you wish to keep in stock.<br>This value can be changed in the Skill Boosts mod settings.',
+		'zh-CN': '使用药水会将您的药水数量减少到您希望库存的数量以下。<br>该值可以在技能提升模组设置中更改。',
+		'zh-TW': '使用藥水會將您的藥水數量減少到您希望庫存的數量以下。<br>該值可以在技能提升模組設定中變更。',
+		'fr': 'Utiliser une potion réduira votre quantité de potion en dessous de la quantité que vous souhaitez garder en stock.<br>Cette valeur peut être modifiée dans les paramètres du mod Skill Boosts.',
+		'de': 'Wenn Sie einen Trank verwenden, wird Ihre Trankmenge unter die Menge reduziert, die Sie auf Lager haben möchten.<br>Dieser Wert kann in den Skill Boosts-Mod-Einstellungen geändert werden.',
+		'it': 'Usare una pozione ridurrà la quantità della tua pozione al di sotto della quantità che desideri tenere in magazzino.<br>Questo valore può essere modificato nelle impostazioni della mod Skill Boosts.',
+		'ko': '물약을 사용하면 물약 수량을 재고로 유지하려는 수량 아래로 줄일 수 있습니다.<br>이 값은 스킬 부스트 모드 설정에서 변경할 수 있습니다.',
+		'ja': 'ポーションを使用すると、ポーションの数量が在庫を維持したい数量よりも減ります。<br>この値はスキルブースト MOD 設定で変更できます。',
+		'pt': 'Usar uma poção reduzirá a quantidade de sua poção abaixo da quantidade que você deseja manter em estoque.<br>Este valor pode ser alterado nas configurações do mod Skill Boosts.',
+		'pt-br': 'Usar uma poção reduzirá a quantidade de sua poção abaixo da quantidade que você deseja manter em estoque.<br>Este valor pode ser alterado nas configurações do mod Skill Boosts.',
+		'es': 'Usar una poción reducirá la cantidad de tu poción por debajo de la cantidad que deseas mantener en stock.<br>Este valor se puede cambiar en la configuración del mod Skill Boosts.',
+		'ru': 'Использование зелья уменьшит количество вашего зелья ниже того количества, которое вы хотите держать на складе.<br>Это значение можно изменить в настройках мода Skill Boosts.',
+		'tr': 'Bir iksir kullanmak, iksir miktarınızı stokta tutmak istediğiniz miktarın altına düşürecektir.<br>Bu değer Beceri Arttırmaları mod ayarlarında değiştirilebilir.',
+	},
+};
